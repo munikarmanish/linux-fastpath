@@ -2444,9 +2444,9 @@ int __udp4_lib_rcv(struct sk_buff *skb, struct udp_table *udptable,
 	if (!pskb_may_pull(skb, sizeof(struct udphdr)))
 		goto drop;		/* No space for header. */
 
-	// manish begin
+	// // manish begin
 	// print_skb(skb, "udp_rcv (after pskb_may_pull)");
-	// manish end
+	// // manish end
 
 	uh   = udp_hdr(skb);
 	ulen = ntohs(uh->len);
