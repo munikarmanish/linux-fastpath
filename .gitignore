@@ -90,7 +90,9 @@ modules.order
 #
 # We don't want to ignore the following even if they are dot-files
 #
+!.vscode
 !.clang-format
+!.clang_complete
 !.cocciconfig
 !.get_maintainer.ignore
 !.gitattributes

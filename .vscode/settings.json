@@ -1,0 +1,24 @@
+{
+    "files.exclude": {
+        "**/.*.*.cmd": true,
+        "**/.*.d": true,
+        "**/.*.S": true
+    },
+    "[c]": {
+        "editor.detectIndentation": false,
+        "editor.tabSize": 8,
+        "editor.insertSpaces": false,
+        "editor.rulers": [80]
+    },
+    "files.associations": {
+        "*.h": "c",
+        "*.tcc": "c",
+        "fstream": "c",
+        "system_error": "c",
+        "memory": "c",
+        "mutex": "c",
+        "semaphore": "c",
+        "shared_mutex": "c",
+        "stop_token": "c"
+    }
+}
