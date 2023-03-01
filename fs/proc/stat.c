@@ -241,6 +241,7 @@ static const struct proc_ops stat_proc_ops = {
 
 static int manish_show(struct seq_file *f, void *p)
 {
+	seq_printf(f, "DEBUG: %d\n", MANISH_DEBUG);
 	manish_print_sk_map(f);
 	return 0;
 }

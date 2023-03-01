@@ -54,10 +54,6 @@
 #include "devlink.h"
 #include "en/devlink.h"
 
-// manish begin
-#include <linux/manish.h>
-// manish end
-
 static struct sk_buff *
 mlx5e_skb_from_cqe_mpwrq_linear(struct mlx5e_rq *rq, struct mlx5e_mpw_info *wi,
 				u16 cqe_bcnt, u32 head_offset, u32 page_idx);
@@ -1506,9 +1502,6 @@ static void mlx5e_handle_rx_cqe_mpwrq(struct mlx5e_rq *rq, struct mlx5_cqe64 *cq
 	struct mlx5_wq_ll *wq;
 	struct sk_buff *skb;
 	u16 cqe_bcnt;
-	// manish begin
-	struct manish_sk_entry *entry = NULL;
-	// manish end
 
 	wi->consumed_strides += cstrides;
 
@@ -1543,19 +1536,7 @@ static void mlx5e_handle_rx_cqe_mpwrq(struct mlx5e_rq *rq, struct mlx5_cqe64 *cq
 			goto mpwrq_cqe_out;
 		}
 
-	// manish begin
-	// try to find the socket
-	entry = manish_sk_lookup(skb);
-	if (entry) {
-		if (MANISH_DEBUG && manish_filter_skb(skb, true))
-			manish_print_skb(skb, "== manish_receive_skb");
-		manish_receive_skb(skb, entry);
-	} else {
-		if (MANISH_DEBUG && manish_filter_skb(skb, true))
-			manish_print_skb(skb, "== napi_gro_receive");
-		napi_gro_receive(rq->cq.napi, skb);
-	}
-	// manish end
+	napi_gro_receive(rq->cq.napi, skb);
 
 mpwrq_cqe_out:
 	if (likely(wi->consumed_strides < rq->mpwqe.num_strides))

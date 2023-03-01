@@ -16,7 +16,7 @@
 DEFINE_PER_CPU(struct manish_sk_map, manish_sk_map);
 EXPORT_PER_CPU_SYMBOL(manish_sk_map);
 
-int MANISH_DEBUG = 1;
+int MANISH_DEBUG = 0;	// debugging disabled by default
 EXPORT_SYMBOL(MANISH_DEBUG);
 
 inline bool manish_filter_parse_skb(const struct sk_buff *skb,

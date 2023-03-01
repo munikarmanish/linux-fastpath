@@ -30,7 +30,8 @@ struct manish_pkt {
 
 extern int MANISH_DEBUG;
 
-inline bool manish_filter_parse_skb(const struct sk_buff *skb, struct manish_pkt *pkt, bool deep);
+inline bool manish_filter_parse_skb(const struct sk_buff *skb,
+				    struct manish_pkt *pkt, bool deep);
 extern bool manish_filter_skb(const struct sk_buff *skb, bool deep);
 extern void manish_print_skb(const struct sk_buff *skb, const char *fname);
 inline void manish_sk_map_init(int cpu);
@@ -38,7 +39,8 @@ extern struct manish_sk_entry *manish_sk_lookup(const struct sk_buff *skb);
 inline bool manish_skb_is_from_mlx(const struct sk_buff *skb);
 extern void manish_sk_insert(const struct sk_buff *skb, struct sock *sk);
 void	    manish_print_sk_map(struct seq_file *f);
-extern int  manish_receive_skb(struct sk_buff *skb, struct manish_sk_entry *entry);
+extern int  manish_receive_skb(struct sk_buff	      *skb,
+			       struct manish_sk_entry *entry);
 extern void manish_sk_remove(const struct sock *sk);
 extern void manish_sk_remove_all(void);
 
