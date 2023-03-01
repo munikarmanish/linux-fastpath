@@ -241,8 +241,10 @@ static const struct proc_ops stat_proc_ops = {
 
 static int manish_show(struct seq_file *f, void *p)
 {
-	seq_printf(f, "DEBUG: %d\n", MANISH_DEBUG);
-	manish_print_sk_map(f);
+	seq_printf(f, "fastpath %s, debug %s\n",
+		   MANISH_FASTPATH ? "on" : "off", MANISH_DEBUG ? "on" : "off");
+	if (MANISH_FASTPATH)
+		manish_print_sk_map(f);
 	return 0;
 }
 
@@ -259,12 +261,23 @@ static ssize_t manish_write(struct file *f, const char __user *ubuf, size_t n, l
 		return -EFAULT;
 	n = strlen(kbuf);
 
-	if (strncmp(kbuf, "0", 1) == 0)
-		MANISH_DEBUG = 0;
-	else if (strncmp(kbuf, "1", 1) == 0)
+	if (strncmp(kbuf, "0d", 2) == 0) {
+		MANISH_FASTPATH = 0;
 		MANISH_DEBUG = 1;
-	else if (strncmp(kbuf, "clear", 5) == 0)
 		manish_sk_remove_all();
+	} else if (strncmp(kbuf, "1d", 2) == 0) {
+		MANISH_FASTPATH = 1;
+		MANISH_DEBUG = 1;
+	} else if (strncmp(kbuf, "1", 1) == 0) {
+		MANISH_FASTPATH = 1;
+		MANISH_DEBUG = 0;
+	} else if (strncmp(kbuf, "0", 1) == 0) {
+		MANISH_FASTPATH = 0;
+		MANISH_DEBUG = 0;
+		manish_sk_remove_all();
+	} else if (strncmp(kbuf, "clear", 5) == 0) {
+		manish_sk_remove_all();
+	}
 
 	*off = n;
 	return n;

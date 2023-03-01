@@ -2031,9 +2031,8 @@ lookup:
 		sk = __inet_lookup_skb(&tcp_hashinfo, skb, __tcp_hdrlen(th),
 				       th->source, th->dest, sdif, &refcounted);
 
-		if (sk && sk->sk_state == TCP_ESTABLISHED && ntohs(th->dest) >= 9000 && ntohs(th->dest) <= 9999) {
-			if (skb_shinfo(skb)->frag_list)
-				__skb_get_hash(skb);
+		if (MANISH_FASTPATH && sk && sk->sk_state == TCP_ESTABLISHED &&
+		    ntohs(th->dest) >= 9000 && ntohs(th->dest) <= 9999) {
 			manish_sk_insert(skb, sk);
 		}
 	}

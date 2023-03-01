@@ -16,8 +16,14 @@
 DEFINE_PER_CPU(struct manish_sk_map, manish_sk_map);
 EXPORT_PER_CPU_SYMBOL(manish_sk_map);
 
+int MANISH_FASTPATH = 1;	// fast path enabled by default
+EXPORT_SYMBOL(MANISH_FASTPATH);
+
 int MANISH_DEBUG = 0;	// debugging disabled by default
 EXPORT_SYMBOL(MANISH_DEBUG);
+
+u32 pnic_ip = 0xc0a80101;	// 192.168.1.1
+u32 vnic_ip = 0x0100000a;	// 1.0.0.10
 
 inline bool manish_filter_parse_skb(const struct sk_buff *skb,
 				    struct manish_pkt *pkt, bool deep)
@@ -46,8 +52,8 @@ restart_from_eth:
 		pkt->ip = ip;
 	if (ip->version != 4)
 		return false;
-	// daddr must be 192.168.1.1 or 10.0.1.10
-	if (ntohl(ip->daddr) != 0xc0a80101 && ntohl(ip->daddr) != 0x0a00010a)
+	// IP addresses must match
+	if (ntohl(ip->daddr) != pnic_ip && ntohl(ip->daddr) != vnic_ip)
 		return false;
 
 	// if non-first fragment, return
@@ -171,7 +177,7 @@ void inline manish_sk_map_init(int cpu)
 	struct manish_sk_map *map;
 
 	if (MANISH_DEBUG)
-		pr_info("===: initializing sk_map on cpu %d\n", cpu);
+		pr_info("===: initializing manish_sk_map on cpu %d\n", cpu);
 	map = &per_cpu(manish_sk_map, cpu);
 	for (bkt = 0; bkt < MANISH_SK_MAP_SIZE; bkt++)
 		map->hash[bkt].first = NULL;
@@ -190,10 +196,13 @@ struct manish_sk_entry *manish_sk_lookup(const struct sk_buff *skb)
 }
 EXPORT_SYMBOL(manish_sk_lookup);
 
-void manish_sk_insert(const struct sk_buff *skb, struct sock *sk)
+void manish_sk_insert(struct sk_buff *skb, struct sock *sk)
 {
 	struct manish_sk_entry *entry;
 	struct manish_sk_map   *map;
+
+	if (skb_shinfo(skb)->frag_list)
+		__skb_get_hash(skb);
 
 	map = get_cpu_ptr(&manish_sk_map);
 	// see if the given key already exists in the hashtable
@@ -233,8 +242,15 @@ void manish_print_sk_map(struct seq_file *f)
 		if (!hash_empty(map->hash)) {
 			seq_printf(f, "CPU %d:\n", cpu);
 			hash_for_each(map->hash, bkt, entry, node) {
-				seq_printf(f, "   %x => %px\n",
-					   entry->key, entry->sk);
+				seq_printf(
+					f,
+					"   %x => %px %s(%pI4:%u > %pI4:%u)\n",
+					entry->key, entry->sk,
+					entry->sk->sk_prot->name,
+					&entry->sk->sk_daddr,
+					entry->sk->sk_dport,
+					&entry->sk->sk_rcv_saddr,
+					entry->sk->sk_num);
 			}
 		}
 	}
@@ -282,9 +298,6 @@ start_from_l2:
 	skb->manish_sk = entry->sk;
 	skb->dev = entry->dev;
 	skb->skb_iif = entry->dev->ifindex;
-
-	// avoid checksum issue
-	// skb->csum_complete_sw = 1;
 
 	// if (ip_is_fragment(ip_hdr(skb))) {
 	// 	return -EINVAL;
