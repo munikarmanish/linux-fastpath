@@ -5677,9 +5677,11 @@ static void netif_receive_skb_list_internal(struct list_head *head)
 		net_timestamp_check(READ_ONCE(netdev_tstamp_prequeue), skb);
 		skb_list_del_init(skb);
 		// manish begin
-		if ((entry = manish_sk_lookup(skb))) {
-			manish_receive_skb(skb, entry);
-			continue;
+		if (MANISH_FASTPATH) {
+			if ((entry = manish_sk_lookup(skb))) {
+				manish_receive_skb(skb, entry);
+				continue;
+			}
 		}
 		// manish end
 		if (!skb_defer_rx_timestamp(skb))
