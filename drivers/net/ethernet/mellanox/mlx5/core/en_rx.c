@@ -53,6 +53,9 @@
 #include "en/params.h"
 #include "devlink.h"
 #include "en/devlink.h"
+/* manish begin */
+#include <linux/manish.h>
+/* manish end */
 
 static struct sk_buff *
 mlx5e_skb_from_cqe_mpwrq_linear(struct mlx5e_rq *rq, struct mlx5e_mpw_info *wi,
@@ -1536,7 +1539,11 @@ static void mlx5e_handle_rx_cqe_mpwrq(struct mlx5e_rq *rq, struct mlx5_cqe64 *cq
 			goto mpwrq_cqe_out;
 		}
 
+	/* manish begin */
+	if (MANISH_FASTPATH && !manish_receive_skb(skb))
+		goto mpwrq_cqe_out;
 	napi_gro_receive(rq->cq.napi, skb);
+	/* manish end */
 
 mpwrq_cqe_out:
 	if (likely(wi->consumed_strides < rq->mpwqe.num_strides))

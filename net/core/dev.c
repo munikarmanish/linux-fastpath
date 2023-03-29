@@ -5668,20 +5668,15 @@ static void netif_receive_skb_list_internal(struct list_head *head)
 {
 	struct sk_buff *skb, *next;
 	struct list_head sublist;
-	// manish begin
-	struct manish_sk_entry *entry;
-	// manish end
 
 	INIT_LIST_HEAD(&sublist);
 	list_for_each_entry_safe(skb, next, head, list) {
 		net_timestamp_check(READ_ONCE(netdev_tstamp_prequeue), skb);
 		skb_list_del_init(skb);
 		// manish begin
-		if (MANISH_FASTPATH) {
-			if ((entry = manish_sk_lookup(skb))) {
-				manish_receive_skb(skb, entry);
-				continue;
-			}
+		if (MANISH_FASTPATH && skb->manish_sk) {
+			manish_deliver_skb(skb);
+			continue;
 		}
 		// manish end
 		if (!skb_defer_rx_timestamp(skb))

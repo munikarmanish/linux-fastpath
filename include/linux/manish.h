@@ -40,8 +40,8 @@ extern struct manish_sk_entry *manish_sk_lookup(const struct sk_buff *skb);
 inline bool manish_skb_is_from_mlx(const struct sk_buff *skb);
 extern void manish_sk_insert(struct sk_buff *skb, struct sock *sk);
 void	    manish_print_sk_map(struct seq_file *f);
-extern int  manish_receive_skb(struct sk_buff	      *skb,
-			       struct manish_sk_entry *entry);
+extern bool manish_receive_skb(struct sk_buff *skb);
+extern bool manish_deliver_skb(struct sk_buff *skb);
 extern void manish_sk_remove(const struct sock *sk);
 extern void manish_sk_remove_all(void);
 

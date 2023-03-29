@@ -256,16 +256,27 @@ void manish_print_sk_map(struct seq_file *f)
 	}
 }
 
-
-int manish_receive_skb(struct sk_buff *skb, struct manish_sk_entry *entry)
+/**
+ *	Checks if packet is VXLAN, and removes outer headers if so.
+ */
+bool manish_receive_skb(struct sk_buff *skb)
 {
-	struct ethhdr *eth;
-	struct iphdr  *ip;
-	struct udphdr *udp;
-	int	       drop_reason = SKB_DROP_REASON_NOT_SPECIFIED;
+	struct ethhdr	       *eth;
+	struct iphdr	       *ip;
+	struct udphdr	       *udp;
+	struct manish_sk_entry *entry;
+	int			drop_reason = SKB_DROP_REASON_NOT_SPECIFIED;
 
-start_from_l2:
-	// skb->data points to L3 header
+	entry = manish_sk_lookup(skb);
+	if (!entry)
+		return true;
+
+	/* prevent socket lookup */
+	skb->manish_sk = entry->sk;
+	// skb->dev = entry->dev;
+	// skb->skb_iif = entry->dev->ifindex;
+
+	/* skb->data points to L3 header */
 	eth = (struct ethhdr *)(skb->head + skb->mac_header);
 	skb->network_header =  skb->mac_header + ETH_HLEN;
 
@@ -278,36 +289,55 @@ start_from_l2:
 		goto drop;
 	ip = ip_hdr(skb);
 	skb->transport_header = skb->network_header + ip->ihl*4;
-	// Remove any debris in the socket control block
-	memset(IPCB(skb), 0, sizeof(struct inet_skb_parm));
-	IPCB(skb)->iif = skb->skb_iif;
 
-	__skb_pull(skb, skb_network_header_len(skb));
-	skb_postpull_rcsum(skb, skb_network_header(skb), skb_network_header_len(skb));
+	/* Remove any debris in the socket control block */
+	// memset(IPCB(skb), 0, sizeof(struct inet_skb_parm));
+	// IPCB(skb)->iif = skb->skb_iif;
 
-	// check if vxlan
+	/* check if vxlan */
 	udp = udp_hdr(skb);
 	if (ip->protocol == IPPROTO_UDP && ntohs(udp->dest) == IANA_VXLAN_UDP_PORT) {
 		skb->mac_header = skb->transport_header + 8 + 8;
-		__skb_pull(skb, 8 + 8 + 14); // udp + vxlan + eth
-		skb_postpull_rcsum(skb, skb_transport_header(skb), 8 + 8 + 14);
-		goto start_from_l2;
+		__skb_pull(skb, skb_network_header_len(skb) + 8 + 8 + 14); // udp + vxlan + eth
+		skb_postpull_rcsum(skb, skb_network_header(skb), skb_network_header_len(skb) + 8 + 8 + 14);
 	}
 
-	// prevent socket lookup
-	skb->manish_sk = entry->sk;
-	skb->dev = entry->dev;
-	skb->skb_iif = entry->dev->ifindex;
+	return true;
 
-	// if (ip_is_fragment(ip_hdr(skb))) {
-	// 	return -EINVAL;
-	// 	// struct net *net = dev_net(skb->dev);
-	// 	// if (ip_defrag(net, skb, IP_DEFRAG_LOCAL_DELIVER))
-	// 	// 	return 0;
-	// }
+ip_csum_error:
+	drop_reason = SKB_DROP_REASON_IP_CSUM;
+	goto drop;
+drop:
+	kfree_skb_reason(skb, drop_reason);
+	return false;
+}
+EXPORT_SYMBOL(manish_receive_skb);
 
-	// directly calling udp_rcv() works (with a minor modification, see
-	// __udp4_lib_rcv+60)
+bool manish_deliver_skb(struct sk_buff *skb)
+{
+	struct ethhdr *eth;
+	struct iphdr  *ip;
+	int	       drop_reason = SKB_DROP_REASON_NOT_SPECIFIED;
+
+	/* skb->data points to L3 header */
+	eth = (struct ethhdr *)(skb->head + skb->mac_header);
+	skb->network_header =  skb->mac_header + ETH_HLEN;
+
+	ip = ip_hdr(skb);
+	if (!pskb_may_pull(skb, ip->ihl*4))
+		goto drop;
+	if (unlikely(ip_fast_csum((u8 *)ip, ip->ihl)))
+		goto ip_csum_error;
+	if (pskb_trim_rcsum(skb, ntohs(ip->tot_len)))
+		goto drop;
+	ip = ip_hdr(skb);
+	skb->transport_header = skb->network_header + ip->ihl*4;
+
+	__skb_pull(skb, skb_network_header_len(skb)); // udp + vxlan + eth
+	skb_postpull_rcsum(skb, skb_network_header(skb), skb_network_header_len(skb));
+
+	/* directly calling udp_rcv() works (with a minor modification, see
+	 * __udp4_lib_rcv+60) */
 	rcu_read_lock();
 	if (ip->protocol == IPPROTO_UDP)
 		udp_rcv(skb);
@@ -315,16 +345,17 @@ start_from_l2:
 		tcp_v4_rcv(skb);
 	rcu_read_unlock();
 
-	return 0;
+	return true;
 
 ip_csum_error:
 	drop_reason = SKB_DROP_REASON_IP_CSUM;
 	goto drop;
 drop:
 	kfree_skb_reason(skb, drop_reason);
-	return 0;
+	return false;
 }
-EXPORT_SYMBOL(manish_receive_skb);
+EXPORT_SYMBOL(manish_deliver_skb);
+
 
 void manish_sk_remove(const struct sock *sk)
 {
