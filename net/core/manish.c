@@ -527,29 +527,16 @@ EXPORT_SYMBOL(manish_xfp_insert);
 static int manish_xfp_add_outer_headers(struct sk_buff		*skb,
 					struct manish_xfp_entry *entry)
 {
-	struct iphdr *ip, *_ip;
-	struct udphdr *udp, *_udp;
-	struct tcphdr *_tcp;
-	u16 iplen, udplen;
+	struct iphdr *ip;
+	struct udphdr *udp;
+	u16 len;
 
 	// make sure there's enough room
 	if (skb_headroom(skb) < 50)
 		return -ENOMEM;
 
-	// calculate inner checksum
-	_ip = ip_hdr(skb);
-	udplen = ntohs(_ip->tot_len) - (_ip->ihl*4);
-	if (_ip->protocol == IPPROTO_UDP) {
-		_udp = udp_hdr(skb);
-		_udp->check = 0;
-		_udp->check = udp_v4_check(udplen, _ip->saddr, _ip->daddr, csum_partial(_udp, udplen, 0));
-	} else if (_ip->protocol == IPPROTO_TCP) {
-		_tcp = tcp_hdr(skb);
-		_tcp->check = 0;
-		_tcp->check = tcp_v4_check(udplen, _ip->saddr, _ip->daddr, csum_partial(_tcp, udplen, 0));
-	}
-
 	// update skb header pointers
+	len = ntohs(ip_hdr(skb)->tot_len) + 50;
 	skb_reset_inner_headers(skb);
 	skb_set_inner_protocol(skb, skb->protocol);
 	skb_push(skb, 50);
@@ -568,22 +555,20 @@ static int manish_xfp_add_outer_headers(struct sk_buff		*skb,
 	get_random_bytes(&ip->id, sizeof(ip->id));
 
 	// compute ip->len
-	iplen = ntohs(_ip->tot_len) + 50;
-	ip->tot_len = htons(iplen);
+	ip->tot_len = htons(len);
 
 	// compute the ip->hdr_csum
-	skb->ip_summed = CHECKSUM_NONE;
+	// skb->ip_summed = CHECKSUM_NONE;
 	ip->check = 0;
 	ip->check = ip_fast_csum(ip, ip->ihl);
 
 	// compute udp->len
-	udplen = iplen - 20;
-	udp->len = htons(udplen);
+	len -= 20;
+	udp->len = htons(len);
 
-	// compute udp->csum
-	skb->csum = 0;
-	udp->check = 0;
-	udp->check = udp_v4_check(udplen, ip->saddr, ip->daddr, csum_partial(udp, udplen, 0));
+	// compute outer udp checksum
+	udp_set_csum(false, skb, ip->saddr, ip->daddr, len);
+	skb->encapsulation = 1;
 
 	return 0;
 }
