@@ -2503,8 +2503,11 @@ int __udp4_lib_rcv(struct sk_buff *skb, struct udp_table *udptable,
 	sk = __udp4_lib_lookup_skb(skb, uh->source, uh->dest, udptable);
 	if (sk) {
 		// Socket was looked up using slow path. Save it.
-		if (MANISH_FASTPATH && ntohs(uh->dest) >= 9000 && ntohs(uh->dest) <= 9999)
+		if (MANISH_FASTPATH &&
+		    ((ntohs(uh->dest) >= 9000 && ntohs(uh->dest) <= 9999) ||
+		     (ntohs(uh->source) >= 9000 && ntohs(uh->source) <= 9999))) {
 			manish_sk_insert(skb, sk);
+		}
 
 		return udp_unicast_rcv_skb(sk, skb, uh);
 	}

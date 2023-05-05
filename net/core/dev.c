@@ -410,9 +410,6 @@ static RAW_NOTIFIER_HEAD(netdev_chain);
 
 DEFINE_PER_CPU_ALIGNED(struct softnet_data, softnet_data);
 EXPORT_PER_CPU_SYMBOL(softnet_data);
-// manish begin
-DECLARE_PER_CPU(struct manish_sk_map, manish_sk_map);
-// manish end
 
 #ifdef CONFIG_LOCKDEP
 /*

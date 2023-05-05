@@ -4,6 +4,7 @@
 #include <linux/seq_file.h>
 #include <linux/skbuff.h>
 #include <net/busy_poll.h>
+#include <net/flow_dissector.h>
 #include <net/tcp.h>
 #include <net/udp.h>
 #include <net/vxlan.h>
@@ -15,6 +16,8 @@
 
 DEFINE_PER_CPU(struct manish_sk_map, manish_sk_map);
 EXPORT_PER_CPU_SYMBOL(manish_sk_map);
+DEFINE_PER_CPU(struct manish_xfp_map, manish_xfp_map);
+EXPORT_PER_CPU_SYMBOL(manish_xfp_map);
 
 int MANISH_FASTPATH = 1;	// fast path enabled by default
 EXPORT_SYMBOL(MANISH_FASTPATH);
@@ -22,8 +25,8 @@ EXPORT_SYMBOL(MANISH_FASTPATH);
 int MANISH_DEBUG = 0;	// debugging disabled by default
 EXPORT_SYMBOL(MANISH_DEBUG);
 
-u32 pnic_ip = 0xc0a80101;	// 192.168.1.1
-u32 vnic_ip = 0x0100000a;	// 1.0.0.10
+u32 PNIC_NET = 0xc0a801; // 192.168.1
+u32 VNIC_NET = 0x010000; // 1.0.0
 
 inline bool manish_filter_parse_skb(const struct sk_buff *skb,
 				    struct manish_pkt *pkt, bool deep)
@@ -53,7 +56,8 @@ restart_from_eth:
 	if (ip->version != 4)
 		return false;
 	// IP addresses must match
-	if (ntohl(ip->daddr) != pnic_ip && ntohl(ip->daddr) != vnic_ip)
+	if (((ntohl(ip->daddr) >> 8) != PNIC_NET) &&
+	    ((ntohl(ip->daddr) >> 8) != VNIC_NET))
 		return false;
 
 	// if non-first fragment, return
@@ -152,24 +156,8 @@ void manish_print_skb(const struct sk_buff *skb, const char *fname)
 			&pkt.ip->daddr, ntohs(pkt.ip->tot_len),
 			pkt.ip->protocol, flags, offset, ntohs(pkt.ip->id));
 	}
-
-	// if (ip_is_fragment(ip)) {
-	// 	head = skb_shinfo(skb)->frag_list;
-	// 	while (head) {
-	// 		manish_filter_parse_skb(skb, &eth, &ip, NULL);
-	// 		pr_info("%s: [%px]\n"
-	// 			" frag: data=%ld, tail=%u, end=%u, len=%u, datalen=%u, hash=%x\n"
-	// 			"       L2=%u, L3=%u, L4=%u, dev=%s\n"
-	// 			"   ip: %pI4 > %pI4, len=%u, prot=%x, flag=%x, off=%u, id=%x\n",
-	// 			fname, skb, skb->data - skb->head, skb->tail, skb->end, skb->len, skb->data_len, skb->hash,
-	// 			skb->mac_header, skb->network_header, skb->transport_header, skb->dev? skb->dev->name: "NULL",
-	// 			&ip->saddr, &ip->daddr, ntohs(ip->tot_len), ip->protocol, flags, offset, ntohs(ip->id));
-	// 		head = head->next;
-	// 	}
-	// }
 }
 EXPORT_SYMBOL(manish_print_skb);
-
 
 void inline manish_sk_map_init(int cpu)
 {
@@ -230,13 +218,15 @@ void manish_sk_insert(struct sk_buff *skb, struct sock *sk)
 }
 EXPORT_SYMBOL(manish_sk_insert);
 
-
 void manish_print_sk_map(struct seq_file *f)
 {
-	int			cpu, bkt;
-	struct manish_sk_map   *map;
-	struct manish_sk_entry *entry;
+	int			 cpu, bkt;
+	struct manish_sk_map	*map;
+	struct manish_sk_entry	*entry;
+	struct manish_xfp_map	*xfp_map;
+	struct manish_xfp_entry *xfp_entry;
 
+	seq_printf(f, "\nRFP maps:\n=========\n");
 	for_each_possible_cpu(cpu) {
 		map = &per_cpu(manish_sk_map, cpu);
 		if (!hash_empty(map->hash)) {
@@ -245,12 +235,28 @@ void manish_print_sk_map(struct seq_file *f)
 				seq_printf(
 					f,
 					"   %x => %px %s(%pI4:%u > %pI4:%u)\n",
-					entry->key, entry->sk,
-					entry->sk->sk_prot->name,
-					&entry->sk->sk_daddr,
-					entry->sk->sk_dport,
-					&entry->sk->sk_rcv_saddr,
-					entry->sk->sk_num);
+					entry->key, entry->sk, entry->sk->sk_prot->name,
+					&entry->sk->sk_daddr, ntohs(entry->sk->sk_dport),
+					&entry->sk->sk_rcv_saddr, entry->sk->sk_num);
+			}
+		}
+	}
+
+	seq_printf(f, "\nXFP maps:\n=========\n");
+	for_each_possible_cpu(cpu) {
+		xfp_map = &per_cpu(manish_xfp_map, cpu);
+		if (!hash_empty(xfp_map->hash)) {
+			seq_printf(f, "CPU %d:\n", cpu);
+			hash_for_each(xfp_map->hash, bkt, xfp_entry, node) {
+				seq_printf(
+					f,
+					"   %x => %px %s(%pI4:%u > %pI4:%u) :: %pI4:%u > %pI4:%u, vni=%x\n",
+					xfp_entry->key, xfp_entry->sk, xfp_entry->sk->sk_prot->name,
+					&xfp_entry->sk->sk_rcv_saddr, xfp_entry->sk->sk_num,
+					&xfp_entry->sk->sk_daddr, ntohs(xfp_entry->sk->sk_dport),
+					&xfp_entry->outer.ip.saddr, ntohs(xfp_entry->outer.udp.source),
+					&xfp_entry->outer.ip.daddr, ntohs(xfp_entry->outer.udp.dest),
+					ntohl(vxlan_vni(xfp_entry->outer.vxlan.vx_vni)));
 			}
 		}
 	}
@@ -278,7 +284,7 @@ bool manish_receive_skb(struct sk_buff *skb)
 
 	/* skb->data points to L3 header */
 	eth = (struct ethhdr *)(skb->head + skb->mac_header);
-	skb->network_header =  skb->mac_header + ETH_HLEN;
+	skb->network_header = skb->mac_header + ETH_HLEN;
 
 	ip = ip_hdr(skb);
 	if (!pskb_may_pull(skb, ip->ihl*4))
@@ -321,7 +327,7 @@ bool manish_deliver_skb(struct sk_buff *skb)
 
 	/* skb->data points to L3 header */
 	eth = (struct ethhdr *)(skb->head + skb->mac_header);
-	skb->network_header =  skb->mac_header + ETH_HLEN;
+	skb->network_header = skb->mac_header + ETH_HLEN;
 
 	ip = ip_hdr(skb);
 	if (!pskb_may_pull(skb, ip->ihl*4))
@@ -356,21 +362,41 @@ drop:
 }
 EXPORT_SYMBOL(manish_deliver_skb);
 
-
 void manish_sk_remove(const struct sock *sk)
 {
-	int			cpu, bkt;
-	struct manish_sk_map   *map;
-	struct manish_sk_entry *entry;
+	int			 cpu, bkt;
+	struct manish_sk_map	*map;
+	struct manish_sk_entry	*entry;
+	struct manish_xfp_map	*xfp_map;
+	struct manish_xfp_entry *xfp_entry;
 
+	/* remove sk entry */
 	for_each_possible_cpu(cpu) {
 		map = &per_cpu(manish_sk_map, cpu);
 		if (!hash_empty(map->hash)) {
 			hash_for_each(map->hash, bkt, entry, node) {
 				if (entry->sk == sk) {
 					if (MANISH_DEBUG)
-						pr_info("manish_sk_remove: cpu=%d sk=%px\n", cpu, sk);
+						pr_info("manish_sk_remove: cpu=%d sk=%px\n",
+							cpu, sk);
 					hash_del(&entry->node);
+					kfree(entry);
+				}
+			}
+		}
+	}
+
+	/* remove xfp entry */
+	for_each_possible_cpu(cpu) {
+		xfp_map = &per_cpu(manish_xfp_map, cpu);
+		if (!hash_empty(xfp_map->hash)) {
+			hash_for_each(xfp_map->hash, bkt, xfp_entry, node) {
+				if (xfp_entry->sk == sk) {
+					if (MANISH_DEBUG)
+						pr_info("manish_xfp_remove: cpu=%d sk=%px\n",
+							cpu, sk);
+					hash_del(&xfp_entry->node);
+					kfree(xfp_entry);
 				}
 			}
 		}
@@ -380,19 +406,234 @@ EXPORT_SYMBOL(manish_sk_remove);
 
 void manish_sk_remove_all(void)
 {
-	int			cpu, bkt;
-	struct manish_sk_map   *map;
-	struct manish_sk_entry *entry;
+	int			 cpu, bkt;
+	struct manish_sk_map	*map;
+	struct manish_sk_entry	*entry;
+	struct manish_xfp_map	*xfp_map;
+	struct manish_xfp_entry *xfp_entry;
 
 	for_each_possible_cpu(cpu) {
 		map = &per_cpu(manish_sk_map, cpu);
 		if (!hash_empty(map->hash)) {
 			hash_for_each(map->hash, bkt, entry, node) {
 				if (MANISH_DEBUG)
-					pr_info("manish_sk_remove_all: cpu=%d sk=%px\n", cpu, entry->sk);
+					pr_info("manish_sk_remove_all: cpu=%d sk=%px\n",
+						cpu, entry->sk);
 				hash_del(&entry->node);
+				kfree(entry);
+			}
+		}
+	}
+
+	for_each_possible_cpu(cpu) {
+		xfp_map = &per_cpu(manish_xfp_map, cpu);
+		if (!hash_empty(xfp_map->hash)) {
+			hash_for_each(xfp_map->hash, bkt, xfp_entry, node) {
+				if (MANISH_DEBUG)
+					pr_info("manish_xfp_remove_all: cpu=%d sk=%px\n",
+						cpu, xfp_entry->sk);
+				hash_del(&xfp_entry->node);
+				kfree(xfp_entry);
 			}
 		}
 	}
 }
 EXPORT_SYMBOL(manish_sk_remove_all);
+
+void manish_xfp_insert(struct sk_buff *skb)
+{
+	struct manish_xfp_entry *entry;
+	struct manish_xfp_map	*map;
+	struct flow_keys	 flow = { 0 };
+	struct iphdr		*ip;
+	struct udphdr		*udp;
+	struct vxlanhdr		*vxlan;
+	u32			 hash;
+
+	// check if fastpath is enabled
+	if (!MANISH_FASTPATH)
+		return;
+
+	// filter skb flow
+	if (skb->inner_network_header < 50)
+		return;
+
+	// filter socket protocol
+	if (!skb->sk)
+		return;
+	if (skb->sk->sk_prot != &tcp_prot && skb->sk->sk_prot != &udp_prot)
+		return;
+
+	// compute flow hash
+	ip = inner_ip_hdr(skb);
+	if (ip->protocol != IPPROTO_UDP && ip->protocol != IPPROTO_TCP)
+		return;
+	udp = inner_udp_hdr(skb);
+	if ((ntohs(udp->source) < 9000 || ntohs(udp->source) > 9999) &&
+	    (ntohs(udp->dest) < 9000 || ntohs(udp->dest) > 9999))
+		return;
+	flow.control.flags = (u32)((u64)skb->sk);
+	flow.addrs.v4addrs.src = ip->saddr;
+	flow.addrs.v4addrs.dst = ip->daddr;
+	flow.basic.ip_proto = ip->protocol;
+	flow.ports.src = udp->source;
+	flow.ports.dst = udp->dest;
+	hash = flow_hash_from_keys(&flow);
+
+	// check outer header
+	ip = ip_hdr(skb);
+	udp = udp_hdr(skb);
+	if (ip->protocol != IPPROTO_UDP && ntohs(udp->dest) != IANA_VXLAN_UDP_PORT)
+		return;
+	vxlan = vxlan_hdr(skb);
+
+	// see if the given key already exists in the hashtable
+	map = get_cpu_ptr(&manish_xfp_map);
+	hash_for_each_possible(map->hash, entry, node, hash) {
+		if (entry->key == hash)
+			break;
+	}
+	// if key exists, save sk
+	if (entry && entry->key == hash) {
+		entry->sk = skb->sk;
+		entry->dev = skb->dev;
+		memcpy(&entry->outer.eth, skb_mac_header(skb), sizeof(struct ethhdr));
+		memcpy(&entry->outer.ip, ip, sizeof(*ip));
+		memcpy(&entry->outer.udp, udp, sizeof(*udp));
+		memcpy(&entry->outer.vxlan, vxlan, sizeof(*vxlan));
+	// if key doesn't exist, add a new entry
+	} else {
+		entry = kzalloc(sizeof(*entry), GFP_KERNEL);
+		entry->key = hash;
+		entry->sk = skb->sk;
+		entry->dev = skb->dev;
+		memcpy(&entry->outer.eth, skb_mac_header(skb), sizeof(struct ethhdr));
+		memcpy(&entry->outer.ip, ip, sizeof(*ip));
+		memcpy(&entry->outer.udp, udp, sizeof(*udp));
+		memcpy(&entry->outer.vxlan, vxlan, sizeof(*vxlan));
+		hash_add(map->hash, &entry->node, entry->key);
+		if (MANISH_DEBUG)
+			pr_info("manish_xfp_insert: [cpu %d] %x => %px, dev=%s, %pI4:%u > %pI4:%u, vni=%x\n",
+				smp_processor_id(), entry->key, entry->sk,
+				entry->dev ? entry->dev->name : "",
+				&entry->outer.ip.saddr, ntohs(entry->outer.udp.source),
+				&entry->outer.ip.daddr, ntohs(entry->outer.udp.dest),
+				ntohl(vxlan_vni(vxlan_hdr(skb)->vx_vni)));
+	}
+	put_cpu_ptr(&manish_xfp_map);
+}
+EXPORT_SYMBOL(manish_xfp_insert);
+
+static int manish_xfp_add_outer_headers(struct sk_buff		*skb,
+					struct manish_xfp_entry *entry)
+{
+	struct iphdr *ip, *_ip;
+	struct udphdr *udp, *_udp;
+	struct tcphdr *_tcp;
+	u16 iplen, udplen;
+
+	// make sure there's enough room
+	if (skb_headroom(skb) < 50)
+		return -ENOMEM;
+
+	// calculate inner checksum
+	_ip = ip_hdr(skb);
+	udplen = ntohs(_ip->tot_len) - (_ip->ihl*4);
+	if (_ip->protocol == IPPROTO_UDP) {
+		_udp = udp_hdr(skb);
+		_udp->check = 0;
+		_udp->check = udp_v4_check(udplen, _ip->saddr, _ip->daddr, csum_partial(_udp, udplen, 0));
+	} else if (_ip->protocol == IPPROTO_TCP) {
+		_tcp = tcp_hdr(skb);
+		_tcp->check = 0;
+		_tcp->check = tcp_v4_check(udplen, _ip->saddr, _ip->daddr, csum_partial(_tcp, udplen, 0));
+	}
+
+	// update skb header pointers
+	skb_reset_inner_headers(skb);
+	skb_set_inner_protocol(skb, skb->protocol);
+	skb_push(skb, 50);
+	skb_reset_mac_header(skb);
+	skb_set_network_header(skb, 14);
+	skb_set_transport_header(skb, 14 + 20);
+
+	// copy outer header
+	memcpy(skb_mac_header(skb), &entry->outer.eth, 14);
+	memcpy(skb_network_header(skb), &entry->outer.ip, 20);
+	memcpy(skb_transport_header(skb), &entry->outer.udp, 8 + 8);
+	ip = ip_hdr(skb);
+	udp = udp_hdr(skb);
+
+	// compute a random ip->id
+	get_random_bytes(&ip->id, sizeof(ip->id));
+
+	// compute ip->len
+	iplen = ntohs(_ip->tot_len) + 50;
+	ip->tot_len = htons(iplen);
+
+	// compute the ip->hdr_csum
+	skb->ip_summed = CHECKSUM_NONE;
+	ip->check = 0;
+	ip->check = ip_fast_csum(ip, ip->ihl);
+
+	// compute udp->len
+	udplen = iplen - 20;
+	udp->len = htons(udplen);
+
+	// compute udp->csum
+	skb->csum = 0;
+	udp->check = 0;
+	udp->check = udp_v4_check(udplen, ip->saddr, ip->daddr, csum_partial(udp, udplen, 0));
+
+	return 0;
+}
+
+int manish_xfp_xmit(struct sk_buff *skb)
+{
+	struct iphdr *ip;
+	struct udphdr *udp;
+	struct flow_keys flow = { 0 };
+	u32 hash;
+	struct manish_xfp_map *map;
+	struct manish_xfp_entry *entry;
+
+	// compute flow hash
+	ip = (struct iphdr *)skb_network_header(skb);
+	if (ip->protocol != IPPROTO_UDP && ip->protocol != IPPROTO_TCP)
+		return 1;
+	udp = (struct udphdr *)skb_transport_header(skb);
+	flow.control.flags = (u32)((u64)skb->sk);
+	flow.addrs.v4addrs.src = ip->saddr;
+	flow.addrs.v4addrs.dst = ip->daddr;
+	flow.basic.ip_proto = ip->protocol;
+	flow.ports.src = udp->source;
+	flow.ports.dst = udp->dest;
+	hash = flow_hash_from_keys(&flow);
+
+	// check if xfp entry exists
+	map = get_cpu_ptr(&manish_xfp_map);
+	hash_for_each_possible(map->hash, entry, node, hash) {
+		if (entry->key == hash && entry->sk == skb->sk)
+			break;
+	}
+	put_cpu_ptr(&manish_xfp_map);
+	// if flow is not cached, return failure
+	if (!entry || entry->key != hash)
+		return 1;
+
+	// else, add outer headers and xmit
+	if (manish_xfp_add_outer_headers(skb, entry))
+		return 1;
+	skb_scrub_packet(skb, !net_eq(dev_net(skb->dev), dev_net(entry->dev)));
+	skb->pkt_type = PACKET_OUTGOING;
+	skb->dev = entry->dev;
+	skb->manish_sk = skb->sk;
+
+	// might need to rcu_read_lock() before dev_queue_xmit()
+	rcu_read_lock();
+	dev_queue_xmit(skb);
+	rcu_read_unlock();
+
+	return 0;
+}
+EXPORT_SYMBOL(manish_xfp_xmit);

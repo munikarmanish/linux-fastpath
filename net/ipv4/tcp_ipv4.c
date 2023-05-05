@@ -2025,14 +2025,16 @@ lookup:
 	// manish begin
 	if (skb->manish_sk) {
 		sk = skb->manish_sk;
-		if (sk_is_refcounted(sk))
+		refcounted = sk_is_refcounted(sk);
+		if (refcounted)
 			sock_hold(sk);
 	} else {
 		sk = __inet_lookup_skb(&tcp_hashinfo, skb, __tcp_hdrlen(th),
 				       th->source, th->dest, sdif, &refcounted);
 
 		if (MANISH_FASTPATH && sk && sk->sk_state == TCP_ESTABLISHED &&
-		    ntohs(th->dest) >= 9000 && ntohs(th->dest) <= 9999) {
+		    ((ntohs(th->dest) >= 9000 && ntohs(th->dest) <= 9999) ||
+		     (ntohs(th->source) >= 9000 && ntohs(th->source) <= 9999))) {
 			manish_sk_insert(skb, sk);
 		}
 	}

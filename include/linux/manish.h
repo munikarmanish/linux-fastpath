@@ -3,6 +3,7 @@
 
 #include <linux/hashtable.h>
 #include <linux/skbuff.h>
+#include <net/vxlan.h>
 #include <uapi/linux/ip.h>
 #include <uapi/linux/udp.h>
 
@@ -28,6 +29,28 @@ struct manish_pkt {
 	};
 };
 
+struct manish_xfp_map {
+	struct hlist_head hash[MANISH_SK_MAP_SIZE];
+};
+
+struct manish_outer_header {
+	struct ethhdr eth;
+	struct iphdr ip;
+	struct udphdr udp;
+	struct vxlanhdr vxlan;
+};
+
+struct manish_xfp_entry {
+	/* required */
+	struct hlist_node node;
+	u32 key;
+	/* inner */
+	struct sock *sk;
+	/* outer */
+	struct net_device *dev;
+	struct manish_outer_header outer;
+};
+
 extern int MANISH_DEBUG;
 extern int MANISH_FASTPATH;
 
@@ -44,5 +67,7 @@ extern bool manish_receive_skb(struct sk_buff *skb);
 extern bool manish_deliver_skb(struct sk_buff *skb);
 extern void manish_sk_remove(const struct sock *sk);
 extern void manish_sk_remove_all(void);
+extern void manish_xfp_insert(struct sk_buff *skb);
+extern int  manish_xfp_xmit(struct sk_buff *skb);
 
 #endif // MANISH_H
