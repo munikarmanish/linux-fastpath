@@ -2749,6 +2749,10 @@ void __tcp_close(struct sock *sk, long timeout)
 	int data_was_unread = 0;
 	int state;
 
+	/* manish begin */
+	manish_sk_remove(sk);
+	/* manish end */
+
 	sk->sk_shutdown = SHUTDOWN_MASK;
 
 	if (sk->sk_state == TCP_LISTEN) {

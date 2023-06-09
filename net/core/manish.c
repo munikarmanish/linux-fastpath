@@ -538,7 +538,7 @@ static int manish_xfp_add_outer_headers(struct sk_buff		*skb,
 	// update skb header pointers
 	len = ntohs(ip_hdr(skb)->tot_len) + 50;
 	skb_reset_inner_headers(skb);
-	skb_set_inner_protocol(skb, skb->protocol);
+	skb_set_inner_protocol(skb, htons(ETH_P_TEB));
 	skb_push(skb, 50);
 	skb_reset_mac_header(skb);
 	skb_set_network_header(skb, 14);
@@ -613,9 +613,11 @@ int manish_xfp_xmit(struct sk_buff *skb)
 	skb->pkt_type = PACKET_OUTGOING;
 	skb->dev = entry->dev;
 	skb->manish_sk = skb->sk;
+	skb_shinfo(skb)->gso_type |= SKB_GSO_UDP_TUNNEL_CSUM;
 
 	// might need to rcu_read_lock() before dev_queue_xmit()
 	rcu_read_lock();
+	skb_tx_timestamp(skb); // timestamp skb
 	dev_queue_xmit(skb);
 	rcu_read_unlock();
 
