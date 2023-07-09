@@ -1,8 +1,10 @@
 #include <linux/manish.h>
 #include <linux/netdevice.h>
+#include <linux/netfilter.h>
 #include <linux/printk.h>
 #include <linux/seq_file.h>
 #include <linux/skbuff.h>
+#include <linux/timekeeping.h>
 #include <net/busy_poll.h>
 #include <net/flow_dissector.h>
 #include <net/tcp.h>
@@ -193,6 +195,9 @@ void manish_sk_insert(struct sk_buff *skb, struct sock *sk)
 		__skb_get_hash(skb);
 
 	map = get_cpu_ptr(&manish_sk_map);
+	// only allow if timestamp difference > 100ms
+	if (ktime_get_ns() - map->timestamp < 100000000UL)
+		goto skip;
 	// see if the given key already exists in the hashtable
 	hash_for_each_possible(map->hash, entry, node, skb->hash) {
 		if (entry->key == skb->hash)
@@ -214,6 +219,7 @@ void manish_sk_insert(struct sk_buff *skb, struct sock *sk)
 				smp_processor_id(), entry->key, entry->sk,
 				sk_is_refcounted(sk));
 	}
+skip:
 	put_cpu_ptr(&manish_sk_map);
 }
 EXPORT_SYMBOL(manish_sk_insert);
@@ -272,6 +278,7 @@ bool manish_receive_skb(struct sk_buff *skb)
 	struct udphdr	       *udp;
 	struct manish_sk_entry *entry;
 	int			drop_reason = SKB_DROP_REASON_NOT_SPECIFIED;
+	int			ret;
 
 	entry = manish_sk_lookup(skb);
 	if (!entry)
@@ -293,6 +300,15 @@ bool manish_receive_skb(struct sk_buff *skb)
 		goto ip_csum_error;
 	if (pskb_trim_rcsum(skb, ntohs(ip->tot_len)))
 		goto drop;
+
+	/* run netfilter hooks */
+	ret = nf_hook(NFPROTO_IPV4, NF_INET_PRE_ROUTING, dev_net(skb->dev), NULL, skb, skb->dev, NULL, NULL);
+	if (ret != 1)
+		return false;
+	ret = nf_hook(NFPROTO_IPV4, NF_INET_LOCAL_IN, dev_net(skb->dev), NULL, skb, skb->dev, NULL, NULL);
+	if (ret != 1)
+		return false;
+
 	ip = ip_hdr(skb);
 	skb->transport_header = skb->network_header + ip->ihl*4;
 
@@ -423,6 +439,7 @@ void manish_sk_remove_all(void)
 				kfree(entry);
 			}
 		}
+		map->timestamp = ktime_get_ns();
 	}
 
 	for_each_possible_cpu(cpu) {
@@ -436,6 +453,7 @@ void manish_sk_remove_all(void)
 				kfree(xfp_entry);
 			}
 		}
+		xfp_map->timestamp = ktime_get_ns();
 	}
 }
 EXPORT_SYMBOL(manish_sk_remove_all);
@@ -489,6 +507,9 @@ void manish_xfp_insert(struct sk_buff *skb)
 
 	// see if the given key already exists in the hashtable
 	map = get_cpu_ptr(&manish_xfp_map);
+	// only allow if timestamp difference > 100ms
+	if (ktime_get_ns() - map->timestamp < 100000000UL)
+		goto skip;
 	hash_for_each_possible(map->hash, entry, node, hash) {
 		if (entry->key == hash)
 			break;
@@ -520,6 +541,7 @@ void manish_xfp_insert(struct sk_buff *skb)
 				&entry->outer.ip.daddr, ntohs(entry->outer.udp.dest),
 				ntohl(vxlan_vni(vxlan_hdr(skb)->vx_vni)));
 	}
+skip:
 	put_cpu_ptr(&manish_xfp_map);
 }
 EXPORT_SYMBOL(manish_xfp_insert);

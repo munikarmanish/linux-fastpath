@@ -17,6 +17,7 @@ struct manish_sk_entry {
 };
 
 struct manish_sk_map {
+	u64 timestamp;
 	struct hlist_head hash[MANISH_SK_MAP_SIZE];
 };
 
@@ -30,6 +31,7 @@ struct manish_pkt {
 };
 
 struct manish_xfp_map {
+	u64 timestamp;
 	struct hlist_head hash[MANISH_SK_MAP_SIZE];
 };
 

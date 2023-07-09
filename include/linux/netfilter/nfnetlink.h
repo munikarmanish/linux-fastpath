@@ -60,6 +60,11 @@ int nfnetlink_unicast(struct sk_buff *skb, struct net *net, u32 portid);
 void nfnetlink_broadcast(struct net *net, struct sk_buff *skb, __u32 portid,
 			 __u32 group, gfp_t allocation);
 
+/* manish begin */
+int nfnetlink_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh,
+		      struct netlink_ext_ack *extack);
+/* manish end */
+
 static inline u16 nfnl_msg_type(u8 subsys, u8 msg_type)
 {
 	return subsys << 8 | msg_type;
