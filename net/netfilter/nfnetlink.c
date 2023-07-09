@@ -212,10 +212,8 @@ void nfnetlink_broadcast(struct net *net, struct sk_buff *skb, __u32 portid,
 EXPORT_SYMBOL_GPL(nfnetlink_broadcast);
 
 /* Process one complete nfnetlink message. */
-/* manish begin */
-int nfnetlink_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh,
+static int nfnetlink_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh,
 			     struct netlink_ext_ack *extack)
-/* manish end */
 {
 	struct net *net = sock_net(skb->sk);
 	const struct nfnl_callback *nc;
@@ -313,9 +311,6 @@ replay:
 		return err;
 	}
 }
-/* manish begin */
-EXPORT_SYMBOL(nfnetlink_rcv_msg);
-/* manish end */
 
 struct nfnl_err {
 	struct list_head	head;

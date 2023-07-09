@@ -301,14 +301,6 @@ bool manish_receive_skb(struct sk_buff *skb)
 	if (pskb_trim_rcsum(skb, ntohs(ip->tot_len)))
 		goto drop;
 
-	/* run netfilter hooks */
-	ret = nf_hook(NFPROTO_IPV4, NF_INET_PRE_ROUTING, dev_net(skb->dev), NULL, skb, skb->dev, NULL, NULL);
-	if (ret != 1)
-		return false;
-	ret = nf_hook(NFPROTO_IPV4, NF_INET_LOCAL_IN, dev_net(skb->dev), NULL, skb, skb->dev, NULL, NULL);
-	if (ret != 1)
-		return false;
-
 	ip = ip_hdr(skb);
 	skb->transport_header = skb->network_header + ip->ihl*4;
 
