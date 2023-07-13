@@ -1539,11 +1539,13 @@ static void mlx5e_handle_rx_cqe_mpwrq(struct mlx5e_rq *rq, struct mlx5_cqe64 *cq
 			goto mpwrq_cqe_out;
 		}
 
-	/* manish begin */
-	if (MANISH_FASTPATH && !manish_receive_skb(skb))
-		goto mpwrq_cqe_out;
+	// manish begin
+	if (MANISH_FASTPATH) {
+		// lookup fastpath socket
+		manish_receive_skb(skb);
+	}
+	// manish end
 	napi_gro_receive(rq->cq.napi, skb);
-	/* manish end */
 
 mpwrq_cqe_out:
 	if (likely(wi->consumed_strides < rq->mpwqe.num_strides))

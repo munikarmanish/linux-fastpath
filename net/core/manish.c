@@ -273,23 +273,24 @@ void manish_print_sk_map(struct seq_file *f)
  */
 bool manish_receive_skb(struct sk_buff *skb)
 {
-	struct ethhdr	       *eth;
-	struct iphdr	       *ip;
-	struct udphdr	       *udp;
+	// struct ethhdr	       *eth;
+	// struct iphdr	       *ip;
+	// struct udphdr	       *udp;
+	// int			drop_reason = SKB_DROP_REASON_NOT_SPECIFIED;
+	// int			ret;
 	struct manish_sk_entry *entry;
-	int			drop_reason = SKB_DROP_REASON_NOT_SPECIFIED;
-	int			ret;
 
 	entry = manish_sk_lookup(skb);
 	if (!entry)
-		return true;
+		return false;
 
 	/* prevent socket lookup */
 	skb->manish_sk = entry->sk;
-	// skb->dev = entry->dev;
+	skb->manish_dev = entry->dev;
 	// skb->skb_iif = entry->dev->ifindex;
 
-	/* skb->data points to L3 header */
+	/*
+	// skb->data points to L3 header
 	eth = (struct ethhdr *)(skb->head + skb->mac_header);
 	skb->network_header = skb->mac_header + ETH_HLEN;
 
@@ -304,39 +305,41 @@ bool manish_receive_skb(struct sk_buff *skb)
 	ip = ip_hdr(skb);
 	skb->transport_header = skb->network_header + ip->ihl*4;
 
-	/* Remove any debris in the socket control block */
+	// // Remove any debris in the socket control block
 	// memset(IPCB(skb), 0, sizeof(struct inet_skb_parm));
 	// IPCB(skb)->iif = skb->skb_iif;
 
-	/* check if vxlan */
+	// check if vxlan
 	udp = udp_hdr(skb);
 	if (ip->protocol == IPPROTO_UDP && ntohs(udp->dest) == IANA_VXLAN_UDP_PORT) {
 		skb->mac_header = skb->transport_header + 8 + 8;
 		__skb_pull(skb, skb_network_header_len(skb) + 8 + 8 + 14); // udp + vxlan + eth
 		skb_postpull_rcsum(skb, skb_network_header(skb), skb_network_header_len(skb) + 8 + 8 + 14);
 	}
+	*/
 
 	return true;
 
+/*
 ip_csum_error:
 	drop_reason = SKB_DROP_REASON_IP_CSUM;
 	goto drop;
 drop:
 	kfree_skb_reason(skb, drop_reason);
 	return false;
+*/
 }
 EXPORT_SYMBOL(manish_receive_skb);
 
 bool manish_deliver_skb(struct sk_buff *skb)
 {
-	struct ethhdr *eth;
-	struct iphdr  *ip;
-	int	       drop_reason = SKB_DROP_REASON_NOT_SPECIFIED;
+	struct iphdr *ip;
+	int	      drop_reason = SKB_DROP_REASON_NOT_SPECIFIED, ret;
 
-	/* skb->data points to L3 header */
-	eth = (struct ethhdr *)(skb->head + skb->mac_header);
+start_from_eth:
+	// skb->data points to L3 header
+	// eth = (struct ethhdr *)(skb->head + skb->mac_header);
 	skb->network_header = skb->mac_header + ETH_HLEN;
-
 	ip = ip_hdr(skb);
 	if (!pskb_may_pull(skb, ip->ihl*4))
 		goto drop;
@@ -344,14 +347,31 @@ bool manish_deliver_skb(struct sk_buff *skb)
 		goto ip_csum_error;
 	if (pskb_trim_rcsum(skb, ntohs(ip->tot_len)))
 		goto drop;
+
+	// run netfilter hooks
+	ret = nf_hook(NFPROTO_IPV4, NF_INET_PRE_ROUTING, dev_net(skb->dev), NULL, skb, skb->dev, NULL, NULL);
+	if (ret != 1)
+		return false;
+	ret = nf_hook(NFPROTO_IPV4, NF_INET_LOCAL_IN, dev_net(skb->dev), NULL, skb, skb->dev, NULL, NULL);
+	if (ret != 1)
+		return false;
+
 	ip = ip_hdr(skb);
 	skb->transport_header = skb->network_header + ip->ihl*4;
 
-	__skb_pull(skb, skb_network_header_len(skb)); // udp + vxlan + eth
+	// check if vxlan
+	if (ip->protocol == IPPROTO_UDP && ntohs(udp_hdr(skb)->dest) == IANA_VXLAN_UDP_PORT) {
+		skb->mac_header = skb->transport_header + 8 + 8;
+		__skb_pull(skb, skb_network_header_len(skb) + 8 + 8 + 14); // udp + vxlan + eth
+		skb_postpull_rcsum(skb, skb_network_header(skb), skb_network_header_len(skb) + 8 + 8 + 14);
+		skb->dev = skb->manish_dev ?: skb->dev;
+		goto start_from_eth;
+	}
+
+	__skb_pull(skb, skb_network_header_len(skb));
 	skb_postpull_rcsum(skb, skb_network_header(skb), skb_network_header_len(skb));
 
-	/* directly calling udp_rcv() works (with a minor modification, see
-	 * __udp4_lib_rcv+60) */
+	// directly calling udp_rcv() works (with a minor modification, see __udp4_lib_rcv+60)
 	rcu_read_lock();
 	if (ip->protocol == IPPROTO_UDP)
 		udp_rcv(skb);
@@ -638,3 +658,84 @@ int manish_xfp_xmit(struct sk_buff *skb)
 	return 0;
 }
 EXPORT_SYMBOL(manish_xfp_xmit);
+
+/*
+
+Vanilla (slow path)
+==========
+
+[pNIC]
+overlay pkt -> gro (deep)
+overlay pkt -> gro (deep)
+overlay pkt -> gro (deep)
+overlay pkt -> gro (deep)
+overlay pkt -> gro (deep)
+overlay pkt -> gro (deep)
+overlay pkt -> gro (deep)
+overlay pkt -> gro (deep) -> eth -> ip (routing, nf) -> udp -> vxlan -> bridge
+
+[bridge]
+pkt -> eth (forward) -> vNIC
+
+[vNIC]
+pkt -> eth -> ip (routing, nf) -> tcp -> socket
+
+
+Fast path
+==========
+
+[pNIC]
+overlay pkt -> pkt -> gro
+overlay pkt -> pkt -> gro
+overlay pkt -> pkt -> gro
+overlay pkt -> pkt -> gro
+overlay pkt -> pkt -> gro
+overlay pkt -> pkt -> gro
+overlay pkt -> pkt -> gro
+overlay pkt -> pkt -> gro -> tcp -> socket
+
+
+Fast path (with pre-GRO hooks)
+==========
+
+[pNIC]
+overlay pkt -> pkt -> nf -> gro
+overlay pkt -> pkt -> nf -> gro
+overlay pkt -> pkt -> nf -> gro
+overlay pkt -> pkt -> nf -> gro
+overlay pkt -> pkt -> nf -> gro
+overlay pkt -> pkt -> nf -> gro
+overlay pkt -> pkt -> nf -> gro
+overlay pkt -> pkt -> nf -> gro -> tcp -> socket
+
+
+Fast path (with deep GRO)
+==========
+
+[pNIC]
+overlay pkt -> gro (deep)
+overlay pkt -> gro (deep)
+overlay pkt -> gro (deep)
+overlay pkt -> gro (deep)
+overlay pkt -> gro (deep)
+overlay pkt -> gro (deep)
+overlay pkt -> gro (deep)
+overlay pkt -> gro (deep)
+overlay pkt -> gro (deep) -> pkt -> tcp -> socket
+
+
+Fast path (with deep GRO + hooks)
+==========
+
+[pNIC]
+overlay pkt -> gro (deep)
+overlay pkt -> gro (deep)
+overlay pkt -> gro (deep)
+overlay pkt -> gro (deep)
+overlay pkt -> gro (deep)
+overlay pkt -> gro (deep)
+overlay pkt -> gro (deep)
+overlay pkt -> gro (deep)
+overlay pkt -> gro (deep) -> nf -> pkt -> tcp -> socket
+
+*/
