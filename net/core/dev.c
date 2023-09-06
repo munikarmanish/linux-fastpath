@@ -6225,6 +6225,11 @@ gro_result_t napi_gro_receive(struct napi_struct *napi, struct sk_buff *skb)
 {
 	gro_result_t ret;
 
+	// manish begin
+	if (MANISH_FASTPATH && (napi->dev->ifindex == 6)) // make sure the input device is enp129s0f0np0
+		manish_receive_skb(skb);
+	// manish end
+
 	skb_mark_napi_id(skb, napi);
 	trace_napi_gro_receive_entry(skb);
 

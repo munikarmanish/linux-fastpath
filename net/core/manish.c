@@ -27,7 +27,7 @@ EXPORT_SYMBOL(MANISH_FASTPATH);
 int MANISH_DEBUG = 0;	// debugging disabled by default
 EXPORT_SYMBOL(MANISH_DEBUG);
 
-u32 PNIC_NET = 0xc0a801; // 192.168.1
+u32 PNIC_NET = 0xc0a800; // 192.168.0
 u32 VNIC_NET = 0x010000; // 1.0.0
 
 inline bool manish_filter_parse_skb(const struct sk_buff *skb,
@@ -89,7 +89,7 @@ restart_from_eth:
 	return true;
 }
 
-inline bool manish_filter_skb(const struct sk_buff *skb, bool deep)
+bool manish_filter_skb(const struct sk_buff *skb, bool deep)
 {
 	return manish_filter_parse_skb(skb, NULL, deep);
 }
@@ -273,12 +273,13 @@ void manish_print_sk_map(struct seq_file *f)
  */
 bool manish_receive_skb(struct sk_buff *skb)
 {
-	// struct ethhdr	       *eth;
-	// struct iphdr	       *ip;
-	// struct udphdr	       *udp;
-	// int			drop_reason = SKB_DROP_REASON_NOT_SPECIFIED;
-	// int			ret;
+	struct iphdr	       *ip;
+	struct udphdr	       *udp;
+	int			drop_reason = SKB_DROP_REASON_NOT_SPECIFIED;
 	struct manish_sk_entry *entry;
+
+	if (skb->manish_sk)
+		return false;
 
 	entry = manish_sk_lookup(skb);
 	if (!entry)
@@ -289,9 +290,7 @@ bool manish_receive_skb(struct sk_buff *skb)
 	skb->manish_dev = entry->dev;
 	// skb->skb_iif = entry->dev->ifindex;
 
-	/*
 	// skb->data points to L3 header
-	eth = (struct ethhdr *)(skb->head + skb->mac_header);
 	skb->network_header = skb->mac_header + ETH_HLEN;
 
 	ip = ip_hdr(skb);
@@ -301,8 +300,6 @@ bool manish_receive_skb(struct sk_buff *skb)
 		goto ip_csum_error;
 	if (pskb_trim_rcsum(skb, ntohs(ip->tot_len)))
 		goto drop;
-
-	ip = ip_hdr(skb);
 	skb->transport_header = skb->network_header + ip->ihl*4;
 
 	// // Remove any debris in the socket control block
@@ -312,22 +309,21 @@ bool manish_receive_skb(struct sk_buff *skb)
 	// check if vxlan
 	udp = udp_hdr(skb);
 	if (ip->protocol == IPPROTO_UDP && ntohs(udp->dest) == IANA_VXLAN_UDP_PORT) {
+		skb->inner_network_header = skb->network_header;
+		skb->inner_transport_header = skb->transport_header;
 		skb->mac_header = skb->transport_header + 8 + 8;
 		__skb_pull(skb, skb_network_header_len(skb) + 8 + 8 + 14); // udp + vxlan + eth
 		skb_postpull_rcsum(skb, skb_network_header(skb), skb_network_header_len(skb) + 8 + 8 + 14);
 	}
-	*/
 
 	return true;
 
-/*
 ip_csum_error:
 	drop_reason = SKB_DROP_REASON_IP_CSUM;
 	goto drop;
 drop:
 	kfree_skb_reason(skb, drop_reason);
 	return false;
-*/
 }
 EXPORT_SYMBOL(manish_receive_skb);
 
@@ -337,9 +333,22 @@ bool manish_deliver_skb(struct sk_buff *skb)
 	int	      drop_reason = SKB_DROP_REASON_NOT_SPECIFIED, ret;
 
 start_from_eth:
-	// skb->data points to L3 header
-	// eth = (struct ethhdr *)(skb->head + skb->mac_header);
+	// run outer netfilter hooks
+	if (skb->inner_network_header > 0 && skb->inner_network_header < skb->network_header) {
+		skb->network_header = skb->inner_network_header;
+		skb->transport_header = skb->inner_transport_header;
+		skb->data = skb->head + skb->network_header;
+		ret = nf_hook(NFPROTO_IPV4, NF_INET_PRE_ROUTING, dev_net(skb->dev), NULL, skb, skb->dev, NULL, NULL);
+		if (ret != 1)
+			return false;
+		ret = nf_hook(NFPROTO_IPV4, NF_INET_LOCAL_IN, dev_net(skb->dev), NULL, skb, skb->dev, NULL, NULL);
+		if (ret != 1)
+			return false;
+	}
+
+	// skb->data should point to inner L3 header now
 	skb->network_header = skb->mac_header + ETH_HLEN;
+	skb->data = skb->head + skb->network_header;
 	ip = ip_hdr(skb);
 	if (!pskb_may_pull(skb, ip->ihl*4))
 		goto drop;
@@ -347,17 +356,16 @@ start_from_eth:
 		goto ip_csum_error;
 	if (pskb_trim_rcsum(skb, ntohs(ip->tot_len)))
 		goto drop;
+	skb->transport_header = skb->network_header + ip->ihl*4;
+	skb->dev = skb->manish_dev;
 
-	// run netfilter hooks
+	// run inner netfilter hooks
 	ret = nf_hook(NFPROTO_IPV4, NF_INET_PRE_ROUTING, dev_net(skb->dev), NULL, skb, skb->dev, NULL, NULL);
 	if (ret != 1)
 		return false;
 	ret = nf_hook(NFPROTO_IPV4, NF_INET_LOCAL_IN, dev_net(skb->dev), NULL, skb, skb->dev, NULL, NULL);
 	if (ret != 1)
 		return false;
-
-	ip = ip_hdr(skb);
-	skb->transport_header = skb->network_header + ip->ihl*4;
 
 	// check if vxlan
 	if (ip->protocol == IPPROTO_UDP && ntohs(udp_hdr(skb)->dest) == IANA_VXLAN_UDP_PORT) {

@@ -21,5 +21,6 @@
         "shared_mutex": "c",
         "stop_token": "c",
         "random": "c"
-    }
+    },
+    "C_Cpp.errorSquiggles": "disabled"
 }

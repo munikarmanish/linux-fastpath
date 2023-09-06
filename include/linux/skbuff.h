@@ -916,8 +916,8 @@ struct sk_buff {
 #endif
 
 	// manish begin
-	struct sock		*manish_sk;
-	struct net_device	*manish_dev;
+	struct sock	       *manish_sk;
+	struct net_device      *manish_dev;
 	// manish end
 
 	union {
