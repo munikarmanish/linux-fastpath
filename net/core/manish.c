@@ -646,16 +646,20 @@ int manish_xfp_xmit(struct sk_buff *skb)
 	put_cpu_ptr(&manish_xfp_map);
 	// if flow is not cached, return failure
 	if (!entry || entry->key != hash)
-		return 1;
+		return 2;
+
+	// inner netfilter hooks
 
 	// else, add outer headers and xmit
 	if (manish_xfp_add_outer_headers(skb, entry))
-		return 1;
+		return 3;
 	skb_scrub_packet(skb, !net_eq(dev_net(skb->dev), dev_net(entry->dev)));
 	skb->pkt_type = PACKET_OUTGOING;
 	skb->dev = entry->dev;
 	skb->manish_sk = skb->sk;
 	skb_shinfo(skb)->gso_type |= SKB_GSO_UDP_TUNNEL_CSUM;
+
+	// inner netfilter hooks
 
 	// might need to rcu_read_lock() before dev_queue_xmit()
 	rcu_read_lock();

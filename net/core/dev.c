@@ -3584,6 +3584,11 @@ static int xmit_one(struct sk_buff *skb, struct net_device *dev,
 	unsigned int len;
 	int rc;
 
+	// manish begin
+	if (MANISH_FASTPATH && skb->sk && (strncmp(dev->name, "enp", 3) == 0))
+		manish_xfp_insert(skb);
+	// manish end
+
 	if (dev_nit_active(dev))
 		dev_queue_xmit_nit(skb, dev);
 
@@ -6226,7 +6231,8 @@ gro_result_t napi_gro_receive(struct napi_struct *napi, struct sk_buff *skb)
 	gro_result_t ret;
 
 	// manish begin
-	if (MANISH_FASTPATH && (napi->dev->ifindex == 6)) // make sure the input device is enp129s0f0np0
+	// make sure the input device is enp129s0f0np0
+	if (MANISH_FASTPATH && (strncmp(napi->dev->name, "enp", 3) == 0))
 		manish_receive_skb(skb);
 	// manish end
 
