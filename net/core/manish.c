@@ -623,6 +623,7 @@ int manish_xfp_xmit(struct sk_buff *skb)
 	u32 hash;
 	struct manish_xfp_map *map;
 	struct manish_xfp_entry *entry;
+	int ret;
 
 	// compute flow hash
 	ip = (struct iphdr *)skb_network_header(skb);
@@ -648,8 +649,6 @@ int manish_xfp_xmit(struct sk_buff *skb)
 	if (!entry || entry->key != hash)
 		return 2;
 
-	// inner netfilter hooks
-
 	// else, add outer headers and xmit
 	if (manish_xfp_add_outer_headers(skb, entry))
 		return 3;
@@ -659,7 +658,13 @@ int manish_xfp_xmit(struct sk_buff *skb)
 	skb->manish_sk = skb->sk;
 	skb_shinfo(skb)->gso_type |= SKB_GSO_UDP_TUNNEL_CSUM;
 
-	// inner netfilter hooks
+	// outer netfilter hooks
+	ret = nf_hook(NFPROTO_IPV4, NF_INET_LOCAL_OUT, dev_net(skb->dev), NULL, skb, skb->dev, NULL, NULL);
+	if (ret != 1)
+		return false;
+	ret = nf_hook(NFPROTO_IPV4, NF_INET_POST_ROUTING, dev_net(skb->dev), NULL, skb, skb->dev, NULL, NULL);
+	if (ret != 1)
+		return false;
 
 	// might need to rcu_read_lock() before dev_queue_xmit()
 	rcu_read_lock();
