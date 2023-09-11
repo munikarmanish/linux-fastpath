@@ -1,3 +1,4 @@
+#include <linux/if_ether.h>
 #include <linux/manish.h>
 #include <linux/netdevice.h>
 #include <linux/netfilter.h>
@@ -176,12 +177,48 @@ void inline manish_sk_map_init(int cpu)
 struct manish_sk_entry *manish_sk_lookup(const struct sk_buff *skb)
 {
 	struct manish_sk_entry *entry = NULL;
-	struct manish_sk_map   *map   = get_cpu_ptr(&manish_sk_map);
+	struct ethhdr	       *eth;
+	struct iphdr	       *ip;
+	struct udphdr	       *udp;
+	u8		       *cursor;
+	struct manish_sk_map   *map = get_cpu_ptr(&manish_sk_map);
 	hash_for_each_possible(map->hash, entry, node, skb->hash) {
 		if (entry->key == skb->hash)
 			break;
 	}
 	put_cpu_ptr(&manish_sk_map);
+	if (!entry)
+		return NULL;
+
+	// get the headers
+	cursor = skb->head + skb->mac_header;
+start_from_eth:
+	eth = (struct ethhdr *)cursor;
+	cursor += ETH_HLEN;
+	ip = (struct iphdr *)cursor;
+	cursor += (ip->ihl * 4);
+	udp = (struct udphdr *)cursor;
+	if (ip->protocol == IPPROTO_UDP && ntohs(udp->dest) == IANA_VXLAN_UDP_PORT) {
+		cursor += (8 + 8); // skip the udp + vxlan headers
+		goto start_from_eth;
+	}
+
+	// check the header fields
+	if (strncmp(entry->flow.smac, eth->h_source, 6) != 0)
+		return NULL;
+	if (strncmp(entry->flow.dmac, eth->h_dest, 6) != 0)
+		return NULL;
+	if (entry->flow.saddr != ip->saddr)
+		return NULL;
+	if (entry->flow.daddr != ip->daddr)
+		return NULL;
+	if (entry->flow.proto != ip->protocol)
+		return NULL;
+	if (entry->flow.sport != udp->source)
+		return NULL;
+	if (entry->flow.dport != udp->dest)
+		return NULL;
+
 	return entry;
 }
 EXPORT_SYMBOL(manish_sk_lookup);
@@ -190,6 +227,9 @@ void manish_sk_insert(struct sk_buff *skb, struct sock *sk)
 {
 	struct manish_sk_entry *entry;
 	struct manish_sk_map   *map;
+	struct ethhdr *eth;
+	struct iphdr *ip;
+	struct udphdr *udp;
 
 	if (skb_shinfo(skb)->frag_list)
 		__skb_get_hash(skb);
@@ -203,22 +243,33 @@ void manish_sk_insert(struct sk_buff *skb, struct sock *sk)
 		if (entry->key == skb->hash)
 			break;
 	}
-	// if key exists, save sk
-	if (entry && entry->key == skb->hash) {
-		entry->sk = sk;
-		entry->dev = skb->dev;
-	// if key doesn't exist, add a new entry
-	} else {
+
+	// if key doesn't exist, add an entry
+	if (!entry || entry->key != skb->hash) {
 		entry = kzalloc(sizeof(*entry), GFP_KERNEL);
 		entry->key = skb->hash;
-		entry->sk = sk;
-		entry->dev = skb->dev;
 		hash_add(map->hash, &entry->node, entry->key);
 		if (MANISH_DEBUG)
 			pr_info("manish_sk_insert: [cpu %d] %x => %px (refcounted = %u)\n",
 				smp_processor_id(), entry->key, entry->sk,
 				sk_is_refcounted(sk));
 	}
+
+	// update the fields
+	entry->sk = sk;
+	entry->dev = skb->dev;
+
+	eth = eth_hdr(skb);
+	memcpy(entry->flow.smac, eth->h_source, 6);
+	memcpy(entry->flow.dmac, eth->h_dest, 6);
+	ip = ip_hdr(skb);
+	entry->flow.saddr = ip->saddr;
+	entry->flow.daddr = ip->daddr;
+	entry->flow.proto = ip->protocol;
+	udp = udp_hdr(skb);
+	entry->flow.sport = udp->source;
+	entry->flow.dport = udp->dest;
+
 skip:
 	put_cpu_ptr(&manish_sk_map);
 }

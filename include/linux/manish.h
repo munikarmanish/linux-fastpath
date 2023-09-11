@@ -9,10 +9,21 @@
 
 #define MANISH_SK_MAP_SIZE (256)
 
+struct manish_flow {
+	__u8   smac[6];
+	__u8   dmac[6];
+	__be32 saddr;
+	__be32 daddr;
+	__be16 sport;
+	__be16 dport;
+	__u8   proto;
+};
+
 struct manish_sk_entry {
 	u32		   key;
 	struct sock	  *sk;
 	struct net_device *dev;
+	struct manish_flow flow;
 	struct hlist_node  node;
 };
 
