@@ -7,7 +7,7 @@
 #include <uapi/linux/ip.h>
 #include <uapi/linux/udp.h>
 
-#define MANISH_SK_MAP_SIZE (256)
+#define MANISH_SK_MAP_SIZE (1<<10)
 
 struct manish_flow {
 	__u8   smac[6];

@@ -2033,6 +2033,7 @@ lookup:
 				       th->source, th->dest, sdif, &refcounted);
 
 		if (MANISH_FASTPATH && sk && sk->sk_state == TCP_ESTABLISHED &&
+		    skb->dev->rtnl_link_ops && skb->dev->rtnl_link_ops->kind &&
 		    ((ntohs(th->dest) >= 9000 && ntohs(th->dest) <= 9999) ||
 		     (ntohs(th->source) >= 9000 && ntohs(th->source) <= 9999))) {
 			manish_sk_insert(skb, sk);
