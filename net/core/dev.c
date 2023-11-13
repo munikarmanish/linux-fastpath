@@ -3585,7 +3585,7 @@ static int xmit_one(struct sk_buff *skb, struct net_device *dev,
 	int rc;
 
 	// manish begin
-	if (MANISH_FASTPATH && skb->sk && (strncmp(dev->name, "enp", 3) == 0))
+	if (MANISH_FASTPATH && skb->manish_sk && (strncmp(dev->name, "enp", 3) == 0))
 		manish_xfp_insert(skb);
 	// manish end
 

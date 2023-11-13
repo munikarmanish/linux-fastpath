@@ -529,7 +529,7 @@ void manish_sk_remove_all(void)
 }
 EXPORT_SYMBOL(manish_sk_remove_all);
 
-void manish_xfp_insert(struct sk_buff *skb)
+int manish_xfp_insert(struct sk_buff *skb)
 {
 	struct manish_xfp_entry *entry;
 	struct manish_xfp_map	*map;
@@ -541,27 +541,29 @@ void manish_xfp_insert(struct sk_buff *skb)
 
 	// check if fastpath is enabled
 	if (!MANISH_FASTPATH)
-		return;
+		return 1;
 
 	// filter skb flow
 	if (skb->inner_network_header < 50)
-		return;
+		return 2;
 
 	// filter socket protocol
-	if (!skb->sk)
-		return;
-	if (skb->sk->sk_prot != &tcp_prot && skb->sk->sk_prot != &udp_prot)
-		return;
+	if (!skb->manish_sk)
+		return 3;
+	if (skb->manish_sk->sk_prot != &tcp_prot && skb->manish_sk->sk_prot != &udp_prot)
+		return 4;
 
 	// compute flow hash
 	ip = inner_ip_hdr(skb);
 	if (ip->protocol != IPPROTO_UDP && ip->protocol != IPPROTO_TCP)
-		return;
+		return 5;
 	udp = inner_udp_hdr(skb);
+	/*
 	if ((ntohs(udp->source) < 9000 || ntohs(udp->source) > 9999) &&
 	    (ntohs(udp->dest) < 9000 || ntohs(udp->dest) > 9999))
-		return;
-	flow.control.flags = (u32)((u64)skb->sk);
+		return 6;
+	*/
+	flow.control.flags = (u32)((u64)skb->manish_sk);
 	flow.addrs.v4addrs.src = ip->saddr;
 	flow.addrs.v4addrs.dst = ip->daddr;
 	flow.basic.ip_proto = ip->protocol;
@@ -573,7 +575,7 @@ void manish_xfp_insert(struct sk_buff *skb)
 	ip = ip_hdr(skb);
 	udp = udp_hdr(skb);
 	if (ip->protocol != IPPROTO_UDP && ntohs(udp->dest) != IANA_VXLAN_UDP_PORT)
-		return;
+		return 7;
 	vxlan = vxlan_hdr(skb);
 
 	// see if the given key already exists in the hashtable
@@ -587,7 +589,7 @@ void manish_xfp_insert(struct sk_buff *skb)
 	}
 	// if key exists, save sk
 	if (entry && entry->key == hash) {
-		entry->sk = skb->sk;
+		entry->sk = skb->manish_sk;
 		entry->dev = skb->dev;
 		memcpy(&entry->outer.eth, skb_mac_header(skb), sizeof(struct ethhdr));
 		memcpy(&entry->outer.ip, ip, sizeof(*ip));
@@ -597,7 +599,7 @@ void manish_xfp_insert(struct sk_buff *skb)
 	} else {
 		entry = kzalloc(sizeof(*entry), GFP_KERNEL);
 		entry->key = hash;
-		entry->sk = skb->sk;
+		entry->sk = skb->manish_sk;
 		entry->dev = skb->dev;
 		memcpy(&entry->outer.eth, skb_mac_header(skb), sizeof(struct ethhdr));
 		memcpy(&entry->outer.ip, ip, sizeof(*ip));
@@ -614,6 +616,7 @@ void manish_xfp_insert(struct sk_buff *skb)
 	}
 skip:
 	put_cpu_ptr(&manish_xfp_map);
+	return 0;
 }
 EXPORT_SYMBOL(manish_xfp_insert);
 
@@ -675,6 +678,8 @@ int manish_xfp_xmit(struct sk_buff *skb)
 	struct manish_xfp_map *map;
 	struct manish_xfp_entry *entry;
 	int ret;
+
+	skb->manish_sk = skb->sk;
 
 	// compute flow hash
 	ip = (struct iphdr *)skb_network_header(skb);

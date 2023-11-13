@@ -80,7 +80,7 @@ extern bool manish_receive_skb(struct sk_buff *skb);
 extern bool manish_deliver_skb(struct sk_buff *skb);
 extern void manish_sk_remove(const struct sock *sk);
 extern void manish_sk_remove_all(void);
-extern void manish_xfp_insert(struct sk_buff *skb);
+extern int  manish_xfp_insert(struct sk_buff *skb);
 extern int  manish_xfp_xmit(struct sk_buff *skb);
 
 #endif // MANISH_H
