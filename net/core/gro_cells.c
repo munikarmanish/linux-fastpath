@@ -4,10 +4,6 @@
 #include <linux/netdevice.h>
 #include <net/gro_cells.h>
 
-// manish begin
-#include <linux/manish.h>
-// manish end
-
 struct gro_cell {
 	struct sk_buff_head	napi_skbs;
 	struct napi_struct	napi;

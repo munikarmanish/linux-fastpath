@@ -27,9 +27,9 @@
 #include <net/tun_proto.h>
 #include <net/vxlan.h>
 #include <net/nexthop.h>
-// manish begin
-#include <linux/manish.h>
-// manish end
+// ECON begin
+#include <linux/econ.h>
+// ECON end
 
 #if IS_ENABLED(CONFIG_IPV6)
 #include <net/ip6_tunnel.h>
@@ -1944,10 +1944,10 @@ static int vxlan_rcv(struct sock *sk, struct sk_buff *skb)
 	}
 
 	dev_sw_netstats_rx_add(vxlan->dev, skb->len);
-	// manish_begin
-	if (manish_filter_skb(skb, true))
-		manish_print_skb(skb, "gro_cells_receive");
-	// manish end
+	// ECON begin
+	if (econ_filter_skb(skb, true))
+		econ_print_skb(skb, "gro_cells_receive");
+	// ECON end
 	gro_cells_receive(&vxlan->gro_cells, skb);
 
 	rcu_read_unlock();

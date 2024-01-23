@@ -141,9 +141,9 @@
 
 #include <linux/ethtool.h>
 
-// manish beg
-#include <linux/manish.h>
-// manish end
+// ECON beg
+#include <linux/econ.h>
+// ECON end
 
 static DEFINE_MUTEX(proto_list_mutex);
 static LIST_HEAD(proto_list);
@@ -3407,9 +3407,9 @@ EXPORT_SYMBOL(sock_common_setsockopt);
 
 void sk_common_release(struct sock *sk)
 {
-	// manish begin
-	manish_sk_remove(sk);
-	// manish end
+	// ECON begin
+	econ_rx_remove(sk);
+	// ECON end
 
 	if (sk->sk_prot->destroy)
 		sk->sk_prot->destroy(sk);

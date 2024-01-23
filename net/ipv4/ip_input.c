@@ -142,9 +142,9 @@
 #include <linux/netlink.h>
 #include <net/dst_metadata.h>
 
-// manish begin
-#include <linux/manish.h>
-// manish end
+// ECON begin
+#include <linux/econ.h>
+// ECON end
 
 /*
  *	Process Router Attention IP option (RFC 2113)
@@ -231,10 +231,10 @@ static int ip_local_deliver_finish(struct net *net, struct sock *sk, struct sk_b
 {
 	__skb_pull(skb, skb_network_header_len(skb));
 
-	// // manish begin
-	// if (manish_filter_skb(skb, true))
-	// 	manish_print_skb(skb, "ip_local_deliver_finish");
-	// // manish end
+	// // ECON begin
+	// if (econ_filter_skb(skb, true))
+	// 	econ_print_skb(skb, "ip_local_deliver_finish");
+	// // ECON end
 
 	rcu_read_lock();
 	ip_protocol_deliver_rcu(net, skb, ip_hdr(skb)->protocol);

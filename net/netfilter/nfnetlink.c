@@ -31,10 +31,6 @@
 #include <net/netns/generic.h>
 #include <linux/netfilter/nfnetlink.h>
 
-/* manish begin */
-#include <linux/manish.h>
-/* manish end */
-
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Harald Welte <laforge@netfilter.org>");
 MODULE_ALIAS_NET_PF_PROTO(PF_NETLINK, NETLINK_NETFILTER);
@@ -307,7 +303,6 @@ replay:
 		}
 		if (err == -EAGAIN)
 			goto replay;
-		// manish_sk_remove_all();
 		return err;
 	}
 }

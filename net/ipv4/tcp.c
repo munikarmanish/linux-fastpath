@@ -281,9 +281,9 @@
 #include <asm/ioctls.h>
 #include <net/busy_poll.h>
 
-// manish begin
-#include <linux/manish.h>
-// manish end
+// ECON begin
+#include <linux/econ.h>
+// ECON end
 
 /* Track pending CMSGs. */
 enum {
@@ -2371,12 +2371,12 @@ static int tcp_recvmsg_locked(struct sock *sk, struct msghdr *msg, size_t len,
 			/* Now that we have two receive queues this
 			 * shouldn't happen.
 			 */
-			// // manish begin
-			// if (MANISH_DEBUG && manish_filter_skb(skb, true))
+			// // ECON begin
+			// if (ECON_DEBUG && econ_filter_skb(skb, true))
 			// 	pr_err("tcp_received_locked: copied=%X, seq=%X, rcvnxt=%X, flag=%X\n",
 			// 		*seq, TCP_SKB_CB(skb)->seq, tp->rcv_nxt,
 			// 		flags);
-			// // manish end
+			// // ECON end
 			if (WARN(before(*seq, TCP_SKB_CB(skb)->seq),
 				 "TCP recvmsg seq # bug: copied %X, seq %X, rcvnxt %X, fl %X\n",
 				 *seq, TCP_SKB_CB(skb)->seq, tp->rcv_nxt,
@@ -2749,9 +2749,9 @@ void __tcp_close(struct sock *sk, long timeout)
 	int data_was_unread = 0;
 	int state;
 
-	/* manish begin */
-	manish_sk_remove(sk);
-	/* manish end */
+	/* ECON begin */
+	econ_rx_remove(sk);
+	/* ECON end */
 
 	sk->sk_shutdown = SHUTDOWN_MASK;
 

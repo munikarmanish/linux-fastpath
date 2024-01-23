@@ -26,9 +26,9 @@
 #include <linux/ptr_ring.h>
 #include <linux/bpf_trace.h>
 #include <linux/net_tstamp.h>
-/* manish begin */
-#include <linux/manish.h>
-/* manish end */
+/* ECON begin */
+#include <linux/econ.h>
+/* ECON end */
 
 #define DRV_NAME	"veth"
 #define DRV_VERSION	"1.0"
@@ -328,10 +328,10 @@ static netdev_tx_t veth_xmit(struct sk_buff *skb, struct net_device *dev)
 	bool use_napi = false;
 	int rxq;
 
-	/* manish begin */
-	if (manish_xfp_xmit(skb) == 0)
+	/* ECON begin */
+	if (econ_xmit(skb) == 0)
 		return NETDEV_TX_OK;
-	/* manish end */
+	/* ECON end */
 
 	rcu_read_lock();
 	rcv = rcu_dereference(priv->peer);

@@ -117,9 +117,9 @@
 #include <net/ipv6_stubs.h>
 #endif
 
-// manish begin
-#include <linux/manish.h>
-// manish end
+// ECON begin
+#include <linux/econ.h>
+// ECON end
 
 struct udp_table udp_table __read_mostly;
 EXPORT_SYMBOL(udp_table);
@@ -2162,10 +2162,10 @@ static int udp_queue_rcv_one_skb(struct sock *sk, struct sk_buff *skb)
 			if (udp_lib_checksum_complete(skb))
 				goto csum_error;
 
-			// manish begin
-			if (manish_filter_skb(skb, true))
-				manish_print_skb(skb, "vxlan_rcv");
-			// manish end
+			// ECON begin
+			if (econ_filter_skb(skb, true))
+				econ_print_skb(skb, "vxlan_rcv");
+			// ECON end
 			ret = encap_rcv(sk, skb);
 			if (ret <= 0) {
 				__UDP_INC_STATS(sock_net(sk),
@@ -2371,12 +2371,12 @@ static inline int udp4_csum_init(struct sk_buff *skb, struct udphdr *uh,
 	 */
 	err = (__force int)skb_checksum_init_zero_check(skb, proto, uh->check,
 							inet_compute_pseudo);
-	// // manish begin
-	// if (MANISH_DEBUG && manish_filter_skb(skb)) {
-	// 	manish_print_skb(skb, "udp_csum_init");
+	// // ECON begin
+	// if (ECON_DEBUG && econ_filter_skb(skb)) {
+	// 	econ_print_skb(skb, "udp_csum_init");
 	// 	pr_err("udp_csum_init: skb=%px err=%x\n", skb, err);
 	// }
-	// // manish end
+	// // ECON end
 	if (err)
 		return err;
 
@@ -2431,10 +2431,10 @@ int __udp4_lib_rcv(struct sk_buff *skb, struct udp_table *udptable,
 	int drop_reason, ret;
 	struct dst_entry *dst;
 
-	// manish begin
-	if (manish_filter_skb(skb, true))
-		manish_print_skb(skb, "udp_rcv");
-	// manish end
+	// ECON begin
+	if (econ_filter_skb(skb, true))
+		econ_print_skb(skb, "udp_rcv");
+	// ECON end
 
 	drop_reason = SKB_DROP_REASON_NOT_SPECIFIED;
 
@@ -2444,9 +2444,9 @@ int __udp4_lib_rcv(struct sk_buff *skb, struct udp_table *udptable,
 	if (!pskb_may_pull(skb, sizeof(struct udphdr)))
 		goto drop;		/* No space for header. */
 
-	// // manish begin
+	// // ECON begin
 	// print_skb(skb, "udp_rcv (after pskb_may_pull)");
-	// // manish end
+	// // ECON end
 
 	uh   = udp_hdr(skb);
 	ulen = ntohs(uh->len);
@@ -2466,35 +2466,35 @@ int __udp4_lib_rcv(struct sk_buff *skb, struct udp_table *udptable,
 	if (udp4_csum_init(skb, uh, proto))
 		goto csum_error;
 
-	// manish begin
-	sk = skb->manish_sk;
+	// ECON begin
+	sk = skb->econ_sk;
 	if (sk)
 		return udp_unicast_rcv_skb(sk, skb, uh);
-	// manish end
+	// ECON end
 
 	sk = skb_steal_sock(skb, &refcounted);
 	if (sk) {
-		// manish begin
-		if (manish_filter_skb(skb, true))
-			manish_print_skb(skb, "skb_steal_sock");
-		// manish end
+		// ECON begin
+		if (econ_filter_skb(skb, true))
+			econ_print_skb(skb, "skb_steal_sock");
+		// ECON end
 		dst = skb_dst(skb);
 
 		if (unlikely(rcu_dereference(sk->sk_rx_dst) != dst))
 			udp_sk_rx_dst_set(sk, dst);
 
 		ret = udp_unicast_rcv_skb(sk, skb, uh);
-		// manish begin
+		// ECON begin
 		if (refcounted) {
 			// print_skb(skb, "udp_rcv: refcounted > sock_put");
 			// pr_info("udp_rcv > refcounted > sock_put\n");
 			sock_put(sk);
 		}
-		// manish end
+		// ECON end
 		return ret;
 	}
 
-	// manish begin
+	// ECON begin
 	// if (rt->rt_flags & (RTCF_BROADCAST|RTCF_MULTICAST))
 	if (rt && (rt->rt_flags & (RTCF_BROADCAST|RTCF_MULTICAST)))
 		return __udp4_lib_mcast_deliver(net, skb, uh,
@@ -2503,15 +2503,15 @@ int __udp4_lib_rcv(struct sk_buff *skb, struct udp_table *udptable,
 	sk = __udp4_lib_lookup_skb(skb, uh->source, uh->dest, udptable);
 	if (sk) {
 		// Socket was looked up using slow path. Save it.
-		if (MANISH_FASTPATH && ntohs(uh->dest) != 4789 /*&&
+		if (ECON_ENABLED && ntohs(uh->dest) != 4789 /*&&
 		    ((ntohs(uh->dest) >= 9000 && ntohs(uh->dest) <= 9999) ||
 		     (ntohs(uh->source) >= 9000 && ntohs(uh->source) <= 9999))*/) {
-			manish_sk_insert(skb, sk);
+			econ_rx_insert(skb, sk);
 		}
 
 		return udp_unicast_rcv_skb(sk, skb, uh);
 	}
-	// manish end
+	// ECON end
 
 	if (!xfrm4_policy_check(NULL, XFRM_POLICY_IN, skb))
 		goto drop;
@@ -2539,13 +2539,13 @@ short_packet:
 			    &saddr, ntohs(uh->source),
 			    ulen, skb->len,
 			    &daddr, ntohs(uh->dest));
-	// manish begin
+	// ECON begin
 	// pr_info("UDP%s: short packet: From %pI4:%u %d/%d to %pI4:%u\n",
 	// 		    proto == IPPROTO_UDPLITE ? "Lite" : "",
 	// 		    &saddr, ntohs(uh->source),
 	// 		    ulen, skb->len,
 	// 		    &daddr, ntohs(uh->dest));
-	// manish end
+	// ECON end
 	goto drop;
 
 csum_error:

@@ -51,9 +51,9 @@
 #include <net/inet_ecn.h>
 #include <net/l3mdev.h>
 
-// manish begin
-#include <linux/manish.h>
-// manish end
+// ECON begin
+#include <linux/econ.h>
+// ECON end
 
 /* NOTE. Logic of IP defragmentation is parallel to corresponding IPv6
  * code now. If you change something here, _PLEASE_ update ipv6/reassembly.c
@@ -482,10 +482,10 @@ int ip_defrag(struct net *net, struct sk_buff *skb, u32 user)
 	int vif = l3mdev_master_ifindex_rcu(dev);
 	struct ipq *qp;
 
-	// manish begin
-	// if (manish_filter_skb(skb, true))
-	//	manish_print_skb(skb, "ip_defrag");
-	// manish end
+	// ECON begin
+	// if (econ_filter_skb(skb, true))
+	//	econ_print_skb(skb, "ip_defrag");
+	// ECON end
 
 	__IP_INC_STATS(net, IPSTATS_MIB_REASMREQDS);
 	skb_orphan(skb);

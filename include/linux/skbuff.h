@@ -915,10 +915,10 @@ struct sk_buff {
 	__u16			tc_index;	/* traffic control index */
 #endif
 
-	// manish begin
-	struct sock	       *manish_sk;
-	struct net_device      *manish_dev;
-	// manish end
+	// ECON begin
+	struct sock	       *econ_sk;
+	struct net_device      *econ_dev;
+	// ECON end
 
 	union {
 		__wsum		csum;

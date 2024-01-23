@@ -150,9 +150,9 @@
 #include <linux/pm_runtime.h>
 #include <linux/prandom.h>
 #include <linux/once_lite.h>
-// manish begin
-#include <linux/manish.h>
-// manish end
+// ECON begin
+#include <linux/econ.h>
+// ECON end
 
 #include "net-sysfs.h"
 
@@ -3584,10 +3584,10 @@ static int xmit_one(struct sk_buff *skb, struct net_device *dev,
 	unsigned int len;
 	int rc;
 
-	// manish begin
-	if (MANISH_FASTPATH && skb->manish_sk && (strncmp(dev->name, "enp", 3) == 0))
-		manish_xfp_insert(skb);
-	// manish end
+	// ECON begin
+	if (ECON_ENABLED && skb->econ_sk && (strncmp(dev->name, "enp", 3) == 0))
+		econ_tx_insert(skb);
+	// ECON end
 
 	if (dev_nit_active(dev))
 		dev_queue_xmit_nit(skb, dev);
@@ -5675,12 +5675,12 @@ static void netif_receive_skb_list_internal(struct list_head *head)
 	list_for_each_entry_safe(skb, next, head, list) {
 		net_timestamp_check(READ_ONCE(netdev_tstamp_prequeue), skb);
 		skb_list_del_init(skb);
-		// manish begin
-		if (MANISH_FASTPATH && skb->manish_sk) {
-			manish_deliver_skb(skb);
+		// ECON begin
+		if (ECON_ENABLED && skb->econ_sk) {
+			econ_rx_deliver(skb);
 			continue;
 		}
-		// manish end
+		// ECON end
 		if (!skb_defer_rx_timestamp(skb))
 			list_add_tail(&skb->list, &sublist);
 	}
@@ -6230,11 +6230,11 @@ gro_result_t napi_gro_receive(struct napi_struct *napi, struct sk_buff *skb)
 {
 	gro_result_t ret;
 
-	// manish begin
+	// ECON begin
 	// make sure the input device is enp129s0f0np0
-	if (MANISH_FASTPATH && (strncmp(napi->dev->name, "enp", 3) == 0))
-		manish_receive_skb(skb);
-	// manish end
+	if (ECON_ENABLED && (strncmp(napi->dev->name, "enp", 3) == 0))
+		econ_rx(skb);
+	// ECON end
 
 	skb_mark_napi_id(skb, napi);
 	trace_napi_gro_receive_entry(skb);
@@ -6463,10 +6463,10 @@ static int process_backlog(struct napi_struct *napi, int quota)
 		struct sk_buff *skb;
 
 		while ((skb = __skb_dequeue(&sd->process_queue))) {
-			// manish begin
-			if (manish_filter_skb(skb, true))
-				manish_print_skb(skb, "netif_receive_skb");
-			// manish end
+			// ECON begin
+			if (econ_filter_skb(skb, true))
+				econ_print_skb(skb, "netif_receive_skb");
+			// ECON end
 			rcu_read_lock();
 			__netif_receive_skb(skb);
 			rcu_read_unlock();
@@ -11669,9 +11669,9 @@ static int __init net_dev_init(void)
 	for_each_possible_cpu(i) {
 		struct work_struct *flush = per_cpu_ptr(&flush_works, i);
 		struct softnet_data *sd = &per_cpu(softnet_data, i);
-		// manish begin
-		manish_sk_map_init(i);
-		// manish end
+		// ECON begin
+		econ_rx_map_init(i);
+		// ECON end
 
 		INIT_WORK(flush, flush_backlog);
 

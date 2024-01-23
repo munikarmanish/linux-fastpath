@@ -14,9 +14,9 @@
 #include <linux/irqnr.h>
 #include <linux/sched/cputime.h>
 #include <linux/tick.h>
-// manish begin
-#include <linux/manish.h>
-// manish end
+// ECON begin
+#include <linux/econ.h>
+// ECON end
 
 #ifndef arch_irq_stat_cpu
 #define arch_irq_stat_cpu(cpu) 0
@@ -237,23 +237,24 @@ static const struct proc_ops stat_proc_ops = {
 	.proc_release	= single_release,
 };
 
-// manish begin
+// ECON begin
 
-static int manish_show(struct seq_file *f, void *p)
+static int econ_show(struct seq_file *f, void *p)
 {
 	seq_printf(f, "fastpath %s, debug %s\n",
-		   MANISH_FASTPATH ? "on" : "off", MANISH_DEBUG ? "on" : "off");
-	if (MANISH_FASTPATH)
-		manish_print_sk_map(f);
+		   ECON_ENABLED ? "on" : "off",
+		   ECON_DEBUG ? "on" : "off");
+	if (ECON_ENABLED)
+		econ_print_rx_map(f);
 	return 0;
 }
 
-static int manish_open(struct inode *inode, struct file *file)
+static int econ_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, manish_show, NULL);
+	return single_open(file, econ_show, NULL);
 }
 
-static ssize_t manish_write(struct file *f, const char __user *ubuf, size_t n, loff_t *off)
+static ssize_t econ_write(struct file *f, const char __user *ubuf, size_t n, loff_t *off)
 {
 	char kbuf[10] = { 0 };
 	n = (n > 9) ? 9 : n;
@@ -262,43 +263,43 @@ static ssize_t manish_write(struct file *f, const char __user *ubuf, size_t n, l
 	n = strlen(kbuf);
 
 	if (strncmp(kbuf, "0d", 2) == 0) {
-		MANISH_FASTPATH = 0;
-		MANISH_DEBUG = 1;
-		manish_sk_remove_all();
+		ECON_ENABLED = 0;
+		ECON_DEBUG = 1;
+		econ_rx_remove_all();
 	} else if (strncmp(kbuf, "1d", 2) == 0) {
-		MANISH_FASTPATH = 1;
-		MANISH_DEBUG = 1;
+		ECON_ENABLED = 1;
+		ECON_DEBUG = 1;
 	} else if (strncmp(kbuf, "1", 1) == 0) {
-		MANISH_FASTPATH = 1;
-		MANISH_DEBUG = 0;
+		ECON_ENABLED = 1;
+		ECON_DEBUG = 0;
 	} else if (strncmp(kbuf, "0", 1) == 0) {
-		MANISH_FASTPATH = 0;
-		MANISH_DEBUG = 0;
-		manish_sk_remove_all();
+		ECON_ENABLED = 0;
+		ECON_DEBUG = 0;
+		econ_rx_remove_all();
 	} else if (strncmp(kbuf, "clear", 5) == 0) {
-		manish_sk_remove_all();
+		econ_rx_remove_all();
 	}
 
 	*off = n;
 	return n;
 }
 
-static const struct proc_ops manish_proc_ops = {
-	.proc_open = manish_open,
+static const struct proc_ops econ_proc_ops = {
+	.proc_open = econ_open,
 	.proc_read = seq_read,
 	.proc_lseek = seq_lseek,
 	.proc_release = single_release,
-	.proc_write = manish_write,
+	.proc_write = econ_write,
 };
 
-// manish end
+// ECON end
 
 static int __init proc_stat_init(void)
 {
 	proc_create("stat", 0, NULL, &stat_proc_ops);
-	// manish begin
-	proc_create("manish", 0666, NULL, &manish_proc_ops);
-	// manish end
+// ECON begin
+	proc_create("econ", 0666, NULL, &econ_proc_ops);
+// ECON end
 	return 0;
 }
 fs_initcall(proc_stat_init);

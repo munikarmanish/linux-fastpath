@@ -22,9 +22,9 @@
 #include <net/tcp.h>
 #include <net/sock_reuseport.h>
 #include <net/addrconf.h>
-// manish begin
-#include <linux/manish.h>
-// manish end
+// ECON begin
+#include <linux/econ.h>
+// ECON end
 
 #if IS_ENABLED(CONFIG_IPV6)
 /* match_sk*_wildcard == true:  IPV6_ADDR_ANY equals to any IPv6 addresses
@@ -1011,9 +1011,9 @@ void inet_csk_destroy_sock(struct sock *sk)
 	/* If it has not 0 inet_sk(sk)->inet_num, it must be bound */
 	WARN_ON(inet_sk(sk)->inet_num && !inet_csk(sk)->icsk_bind_hash);
 
-	// manish begin
-	manish_sk_remove(sk);
-	// manish end
+	// ECON begin
+	econ_rx_remove(sk);
+	// ECON end
 
 	sk->sk_prot->destroy(sk);
 

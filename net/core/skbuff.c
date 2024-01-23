@@ -79,9 +79,9 @@
 #include <linux/user_namespace.h>
 #include <linux/indirect_call_wrapper.h>
 
-// manish begin
-#include <linux/manish.h>
-// manish end
+// ECON begin
+#include <linux/econ.h>
+// ECON end
 
 #include "datagram.h"
 #include "sock_destructor.h"
@@ -3063,10 +3063,10 @@ __sum16 __skb_checksum_complete(struct sk_buff *skb)
 			netdev_rx_csum_fault(skb->dev, skb);
 	}
 
-	// // manish begin
-	// if (MANISH_DEBUG && manish_filter_skb(skb))
+	// // ECON begin
+	// if (ECON_DEBUG && econ_filter_skb(skb))
 	// 	skb_dump(KERN_INFO, skb, false);
-	// // manish end
+	// // ECON end
 
 	if (!skb_shared(skb)) {
 		/* Save full packet checksum */

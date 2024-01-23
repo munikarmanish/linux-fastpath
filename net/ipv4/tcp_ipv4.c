@@ -83,9 +83,9 @@
 
 #include <trace/events/tcp.h>
 
-// manish begin
-#include <linux/manish.h>
-// manish end
+// ECON begin
+#include <linux/econ.h>
+// ECON end
 
 #ifdef CONFIG_TCP_MD5SIG
 static int tcp_v4_md5_hash_hdr(char *md5_hash, const struct tcp_md5sig_key *key,
@@ -1983,10 +1983,10 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	int drop_reason;
 	int ret;
 
-	// manish begin
-	if (manish_filter_skb(skb, true))
-		manish_print_skb(skb, "tcp_rcv");
-	// manish end
+	// ECON begin
+	if (econ_filter_skb(skb, true))
+		econ_print_skb(skb, "tcp_rcv");
+	// ECON end
 
 	drop_reason = SKB_DROP_REASON_NOT_SPECIFIED;
 	if (skb->pkt_type != PACKET_HOST)
@@ -2022,9 +2022,9 @@ lookup:
 	sk = __inet_lookup_skb(&tcp_hashinfo, skb, __tcp_hdrlen(th), th->source,
 			       th->dest, sdif, &refcounted);
 	*/
-	// manish begin
-	if (skb->manish_sk) {
-		sk = skb->manish_sk;
+	// ECON begin
+	if (skb->econ_sk) {
+		sk = skb->econ_sk;
 		refcounted = sk_is_refcounted(sk);
 		if (refcounted)
 			sock_hold(sk);
@@ -2032,14 +2032,14 @@ lookup:
 		sk = __inet_lookup_skb(&tcp_hashinfo, skb, __tcp_hdrlen(th),
 				       th->source, th->dest, sdif, &refcounted);
 
-		if (MANISH_FASTPATH && sk && sk->sk_state == TCP_ESTABLISHED &&
+		if (ECON_ENABLED && sk && sk->sk_state == TCP_ESTABLISHED &&
 		    skb->dev->rtnl_link_ops && skb->dev->rtnl_link_ops->kind /*&&
 		    ((ntohs(th->dest) >= 9000 && ntohs(th->dest) <= 9999) ||
 		     (ntohs(th->source) >= 9000 && ntohs(th->source) <= 9999))*/) {
-			manish_sk_insert(skb, sk);
+			econ_rx_insert(skb, sk);
 		}
 	}
-	// manish end
+	// ECON end
 	if (!sk)
 		goto no_tcp_socket;
 
@@ -2133,10 +2133,10 @@ process:
 	th = (const struct tcphdr *)skb->data;
 	iph = ip_hdr(skb);
 	tcp_v4_fill_cb(skb, iph, th);
-	// // manish begin
-	// if (MANISH_DEBUG && manish_filter_skb(skb, true))
+	// // ECON begin
+	// if (ECON_DEBUG && econ_filter_skb(skb, true))
 	// 	pr_err("tcp_rcv: seq=%X\n", TCP_SKB_CB(skb)->seq);
-	// // manish end
+	// // ECON end
 
 	skb->dev = NULL;
 

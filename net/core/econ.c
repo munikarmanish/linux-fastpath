@@ -1,5 +1,5 @@
+#include <linux/econ.h>
 #include <linux/if_ether.h>
-#include <linux/manish.h>
 #include <linux/netdevice.h>
 #include <linux/netfilter.h>
 #include <linux/printk.h>
@@ -17,22 +17,21 @@
 #include <uapi/linux/tcp.h>
 #include <uapi/linux/udp.h>
 
-DEFINE_PER_CPU(struct manish_sk_map, manish_sk_map);
-EXPORT_PER_CPU_SYMBOL(manish_sk_map);
-DEFINE_PER_CPU(struct manish_xfp_map, manish_xfp_map);
-EXPORT_PER_CPU_SYMBOL(manish_xfp_map);
+DEFINE_PER_CPU(struct econ_rx_map, econ_rx_map);
+EXPORT_PER_CPU_SYMBOL(econ_rx_map);
+DEFINE_PER_CPU(struct econ_tx_map, econ_tx_map);
+EXPORT_PER_CPU_SYMBOL(econ_tx_map);
 
-int MANISH_FASTPATH = 1;	// fast path enabled by default
-EXPORT_SYMBOL(MANISH_FASTPATH);
+int ECON_ENABLED = 1;	// ECON enabled by default
+EXPORT_SYMBOL(ECON_ENABLED);
 
-int MANISH_DEBUG = 0;	// debugging disabled by default
-EXPORT_SYMBOL(MANISH_DEBUG);
+int ECON_DEBUG = 0;	// debugging disabled by default
+EXPORT_SYMBOL(ECON_DEBUG);
 
 u32 PNIC_NET = 0xc0a800; // 192.168.0
 u32 VNIC_NET = 0x010000; // 1.0.0
 
-inline bool manish_filter_parse_skb(const struct sk_buff *skb,
-				    struct manish_pkt *pkt, bool deep)
+inline bool econ_filter_parse_skb(const struct sk_buff *skb, struct econ_pkt *pkt, bool deep)
 {
 	u8	      *cur;
 	struct ethhdr *eth;
@@ -90,22 +89,22 @@ restart_from_eth:
 	return true;
 }
 
-bool manish_filter_skb(const struct sk_buff *skb, bool deep)
+bool econ_filter_skb(const struct sk_buff *skb, bool deep)
 {
-	return manish_filter_parse_skb(skb, NULL, deep);
+	return econ_filter_parse_skb(skb, NULL, deep);
 }
-EXPORT_SYMBOL(manish_filter_skb);
+EXPORT_SYMBOL(econ_filter_skb);
 
-void manish_print_skb(const struct sk_buff *skb, const char *fname)
+void econ_print_skb(const struct sk_buff *skb, const char *fname)
 {
-	struct manish_pkt pkt;
-	u16		  flags, offset;
+	struct econ_pkt pkt;
+	u16 flags, offset;
 
-	if (!MANISH_DEBUG)
+	if (!ECON_DEBUG)
 		return;
 
 	// only print shallow headers
-	if (!manish_filter_parse_skb(skb, &pkt, false))
+	if (!econ_filter_parse_skb(skb, &pkt, false))
 		return;
 
 	flags = ntohs(pkt.ip->frag_off) >> 13;
@@ -160,33 +159,33 @@ void manish_print_skb(const struct sk_buff *skb, const char *fname)
 			pkt.ip->protocol, flags, offset, ntohs(pkt.ip->id));
 	}
 }
-EXPORT_SYMBOL(manish_print_skb);
+EXPORT_SYMBOL(econ_print_skb);
 
-void inline manish_sk_map_init(int cpu)
+void inline econ_rx_map_init(int cpu)
 {
-	int		      bkt;
-	struct manish_sk_map *map;
+	int bkt;
+	struct econ_rx_map *map;
 
-	if (MANISH_DEBUG)
-		pr_info("===: initializing manish_sk_map on cpu %d\n", cpu);
-	map = &per_cpu(manish_sk_map, cpu);
-	for (bkt = 0; bkt < MANISH_SK_MAP_SIZE; bkt++)
+	if (ECON_DEBUG)
+		pr_info("===: initializing econ_rx_map on cpu %d\n", cpu);
+	map = &per_cpu(econ_rx_map, cpu);
+	for (bkt = 0; bkt < ECON_MAP_SIZE; bkt++)
 		map->hash[bkt].first = NULL;
 }
 
-struct manish_sk_entry *manish_sk_lookup(const struct sk_buff *skb)
+struct econ_rx_entry *econ_rx_lookup(const struct sk_buff *skb)
 {
-	struct manish_sk_entry *entry = NULL;
-	struct ethhdr	       *eth;
-	struct iphdr	       *ip;
-	struct udphdr	       *udp;
-	u8		       *cursor;
-	struct manish_sk_map   *map = get_cpu_ptr(&manish_sk_map);
+	struct econ_rx_entry *entry = NULL;
+	struct ethhdr	     *eth;
+	struct iphdr	     *ip;
+	struct udphdr	     *udp;
+	u8		     *cursor;
+	struct econ_rx_map   *map = get_cpu_ptr(&econ_rx_map);
 	hash_for_each_possible(map->hash, entry, node, skb->hash) {
 		if (entry->key == skb->hash)
 			break;
 	}
-	put_cpu_ptr(&manish_sk_map);
+	put_cpu_ptr(&econ_rx_map);
 	if (!entry)
 		return NULL;
 
@@ -221,20 +220,20 @@ start_from_eth:
 
 	return entry;
 }
-EXPORT_SYMBOL(manish_sk_lookup);
+EXPORT_SYMBOL(econ_rx_lookup);
 
-void manish_sk_insert(struct sk_buff *skb, struct sock *sk)
+void econ_rx_insert(struct sk_buff *skb, struct sock *sk)
 {
-	struct manish_sk_entry *entry;
-	struct manish_sk_map   *map;
-	struct ethhdr *eth;
-	struct iphdr *ip;
-	struct udphdr *udp;
+	struct econ_rx_entry *entry;
+	struct econ_rx_map   *map;
+	struct ethhdr	     *eth;
+	struct iphdr	     *ip;
+	struct udphdr	     *udp;
 
 	if (skb_shinfo(skb)->frag_list)
 		__skb_get_hash(skb);
 
-	map = get_cpu_ptr(&manish_sk_map);
+	map = get_cpu_ptr(&econ_rx_map);
 	// only allow if timestamp difference > 100ms
 	if (ktime_get_ns() - map->timestamp < 100000000UL)
 		goto skip;
@@ -249,8 +248,8 @@ void manish_sk_insert(struct sk_buff *skb, struct sock *sk)
 		entry = kzalloc(sizeof(*entry), GFP_KERNEL);
 		entry->key = skb->hash;
 		hash_add(map->hash, &entry->node, entry->key);
-		if (MANISH_DEBUG)
-			pr_info("manish_sk_insert: [cpu %d] %x => %px (refcounted = %u)\n",
+		if (ECON_DEBUG)
+			pr_info("econ_rx_insert: [cpu %d] %x => %px (refcounted = %u)\n",
 				smp_processor_id(), entry->key, entry->sk,
 				sk_is_refcounted(sk));
 	}
@@ -271,49 +270,57 @@ void manish_sk_insert(struct sk_buff *skb, struct sock *sk)
 	entry->flow.dport = udp->dest;
 
 skip:
-	put_cpu_ptr(&manish_sk_map);
+	put_cpu_ptr(&econ_rx_map);
 }
-EXPORT_SYMBOL(manish_sk_insert);
+EXPORT_SYMBOL(econ_rx_insert);
 
-void manish_print_sk_map(struct seq_file *f)
+void econ_print_rx_map(struct seq_file *f)
 {
-	int			 cpu, bkt;
-	struct manish_sk_map	*map;
-	struct manish_sk_entry	*entry;
-	struct manish_xfp_map	*xfp_map;
-	struct manish_xfp_entry *xfp_entry;
+	int		      cpu, bkt;
+	struct econ_rx_map   *rx_map;
+	struct econ_rx_entry *rx_entry;
+	struct econ_tx_map   *tx_map;
+	struct econ_tx_entry *tx_entry;
 
-	seq_printf(f, "\nRFP maps:\n=========\n");
+	seq_printf(f, "\nECON Rx maps:\n=========\n");
 	for_each_possible_cpu(cpu) {
-		map = &per_cpu(manish_sk_map, cpu);
-		if (!hash_empty(map->hash)) {
+		rx_map = &per_cpu(econ_rx_map, cpu);
+		if (!hash_empty(rx_map->hash)) {
 			seq_printf(f, "CPU %d:\n", cpu);
-			hash_for_each(map->hash, bkt, entry, node) {
+			hash_for_each(rx_map->hash, bkt, rx_entry, node) {
 				seq_printf(
 					f,
 					"   %x => %px %s(%pI4:%u > %pI4:%u)\n",
-					entry->key, entry->sk, entry->sk->sk_prot->name,
-					&entry->sk->sk_daddr, ntohs(entry->sk->sk_dport),
-					&entry->sk->sk_rcv_saddr, entry->sk->sk_num);
+					rx_entry->key, rx_entry->sk,
+					rx_entry->sk->sk_prot->name,
+					&rx_entry->sk->sk_daddr,
+					ntohs(rx_entry->sk->sk_dport),
+					&rx_entry->sk->sk_rcv_saddr,
+					rx_entry->sk->sk_num);
 			}
 		}
 	}
 
-	seq_printf(f, "\nXFP maps:\n=========\n");
+	seq_printf(f, "\nECON Tx maps:\n=========\n");
 	for_each_possible_cpu(cpu) {
-		xfp_map = &per_cpu(manish_xfp_map, cpu);
-		if (!hash_empty(xfp_map->hash)) {
+		tx_map = &per_cpu(econ_tx_map, cpu);
+		if (!hash_empty(tx_map->hash)) {
 			seq_printf(f, "CPU %d:\n", cpu);
-			hash_for_each(xfp_map->hash, bkt, xfp_entry, node) {
+			hash_for_each(tx_map->hash, bkt, tx_entry, node) {
 				seq_printf(
 					f,
 					"   %x => %px %s(%pI4:%u > %pI4:%u) :: %pI4:%u > %pI4:%u, vni=%x\n",
-					xfp_entry->key, xfp_entry->sk, xfp_entry->sk->sk_prot->name,
-					&xfp_entry->sk->sk_rcv_saddr, xfp_entry->sk->sk_num,
-					&xfp_entry->sk->sk_daddr, ntohs(xfp_entry->sk->sk_dport),
-					&xfp_entry->outer.ip.saddr, ntohs(xfp_entry->outer.udp.source),
-					&xfp_entry->outer.ip.daddr, ntohs(xfp_entry->outer.udp.dest),
-					ntohl(vxlan_vni(xfp_entry->outer.vxlan.vx_vni)));
+					tx_entry->key, tx_entry->sk,
+					tx_entry->sk->sk_prot->name,
+					&tx_entry->sk->sk_rcv_saddr,
+					tx_entry->sk->sk_num,
+					&tx_entry->sk->sk_daddr,
+					ntohs(tx_entry->sk->sk_dport),
+					&tx_entry->outer.ip.saddr,
+					ntohs(tx_entry->outer.udp.source),
+					&tx_entry->outer.ip.daddr,
+					ntohs(tx_entry->outer.udp.dest),
+					ntohl(vxlan_vni(tx_entry->outer.vxlan.vx_vni)));
 			}
 		}
 	}
@@ -322,23 +329,23 @@ void manish_print_sk_map(struct seq_file *f)
 /**
  *	Checks if packet is VXLAN, and removes outer headers if so.
  */
-bool manish_receive_skb(struct sk_buff *skb)
+bool econ_rx(struct sk_buff *skb)
 {
-	struct iphdr	       *ip;
-	struct udphdr	       *udp;
-	int			drop_reason = SKB_DROP_REASON_NOT_SPECIFIED;
-	struct manish_sk_entry *entry;
+	struct iphdr	     *ip;
+	struct udphdr	     *udp;
+	struct econ_rx_entry *entry;
+	int		      drop_reason = SKB_DROP_REASON_NOT_SPECIFIED;
 
-	if (skb->manish_sk)
+	if (skb->econ_sk)
 		return false;
 
-	entry = manish_sk_lookup(skb);
+	entry = econ_rx_lookup(skb);
 	if (!entry)
 		return false;
 
 	/* prevent socket lookup */
-	skb->manish_sk = entry->sk;
-	skb->manish_dev = entry->dev;
+	skb->econ_sk = entry->sk;
+	skb->econ_dev = entry->dev;
 	// skb->skb_iif = entry->dev->ifindex;
 
 	// skb->data points to L3 header
@@ -376,9 +383,9 @@ drop:
 	kfree_skb_reason(skb, drop_reason);
 	return false;
 }
-EXPORT_SYMBOL(manish_receive_skb);
+EXPORT_SYMBOL(econ_rx);
 
-bool manish_deliver_skb(struct sk_buff *skb)
+bool econ_rx_deliver(struct sk_buff *skb)
 {
 	struct iphdr *ip;
 	int	      drop_reason = SKB_DROP_REASON_NOT_SPECIFIED, ret;
@@ -408,7 +415,7 @@ start_from_eth:
 	if (pskb_trim_rcsum(skb, ntohs(ip->tot_len)))
 		goto drop;
 	skb->transport_header = skb->network_header + ip->ihl*4;
-	skb->dev = skb->manish_dev;
+	skb->dev = skb->econ_dev;
 
 	// run inner netfilter hooks
 	ret = nf_hook(NFPROTO_IPV4, NF_INET_PRE_ROUTING, dev_net(skb->dev), NULL, skb, skb->dev, NULL, NULL);
@@ -423,7 +430,7 @@ start_from_eth:
 		skb->mac_header = skb->transport_header + 8 + 8;
 		__skb_pull(skb, skb_network_header_len(skb) + 8 + 8 + 14); // udp + vxlan + eth
 		skb_postpull_rcsum(skb, skb_network_header(skb), skb_network_header_len(skb) + 8 + 8 + 14);
-		skb->dev = skb->manish_dev ?: skb->dev;
+		skb->dev = skb->econ_dev ?: skb->dev;
 		goto start_from_eth;
 	}
 
@@ -447,24 +454,24 @@ drop:
 	kfree_skb_reason(skb, drop_reason);
 	return false;
 }
-EXPORT_SYMBOL(manish_deliver_skb);
+EXPORT_SYMBOL(econ_rx_deliver);
 
-void manish_sk_remove(const struct sock *sk)
+void econ_rx_remove(const struct sock *sk)
 {
-	int			 cpu, bkt;
-	struct manish_sk_map	*map;
-	struct manish_sk_entry	*entry;
-	struct manish_xfp_map	*xfp_map;
-	struct manish_xfp_entry *xfp_entry;
+	int		      cpu, bkt;
+	struct econ_rx_map   *map;
+	struct econ_rx_entry *entry;
+	struct econ_tx_map   *tx_map;
+	struct econ_tx_entry *tx_entry;
 
 	/* remove sk entry */
 	for_each_possible_cpu(cpu) {
-		map = &per_cpu(manish_sk_map, cpu);
+		map = &per_cpu(econ_rx_map, cpu);
 		if (!hash_empty(map->hash)) {
 			hash_for_each(map->hash, bkt, entry, node) {
 				if (entry->sk == sk) {
-					if (MANISH_DEBUG)
-						pr_info("manish_sk_remove: cpu=%d sk=%px\n",
+					if (ECON_DEBUG)
+						pr_info("econ_rx_remove: cpu=%d sk=%px\n",
 							cpu, sk);
 					hash_del(&entry->node);
 					kfree(entry);
@@ -473,38 +480,38 @@ void manish_sk_remove(const struct sock *sk)
 		}
 	}
 
-	/* remove xfp entry */
+	/* remove tx entry */
 	for_each_possible_cpu(cpu) {
-		xfp_map = &per_cpu(manish_xfp_map, cpu);
-		if (!hash_empty(xfp_map->hash)) {
-			hash_for_each(xfp_map->hash, bkt, xfp_entry, node) {
-				if (xfp_entry->sk == sk) {
-					if (MANISH_DEBUG)
-						pr_info("manish_xfp_remove: cpu=%d sk=%px\n",
+		tx_map = &per_cpu(econ_tx_map, cpu);
+		if (!hash_empty(tx_map->hash)) {
+			hash_for_each(tx_map->hash, bkt, tx_entry, node) {
+				if (tx_entry->sk == sk) {
+					if (ECON_DEBUG)
+						pr_info("econ_tx_remove: cpu=%d sk=%px\n",
 							cpu, sk);
-					hash_del(&xfp_entry->node);
-					kfree(xfp_entry);
+					hash_del(&tx_entry->node);
+					kfree(tx_entry);
 				}
 			}
 		}
 	}
 }
-EXPORT_SYMBOL(manish_sk_remove);
+EXPORT_SYMBOL(econ_rx_remove);
 
-void manish_sk_remove_all(void)
+void econ_rx_remove_all(void)
 {
-	int			 cpu, bkt;
-	struct manish_sk_map	*map;
-	struct manish_sk_entry	*entry;
-	struct manish_xfp_map	*xfp_map;
-	struct manish_xfp_entry *xfp_entry;
+	int		      cpu, bkt;
+	struct econ_rx_map   *map;
+	struct econ_rx_entry *entry;
+	struct econ_tx_map   *tx_map;
+	struct econ_tx_entry *tx_entry;
 
 	for_each_possible_cpu(cpu) {
-		map = &per_cpu(manish_sk_map, cpu);
+		map = &per_cpu(econ_rx_map, cpu);
 		if (!hash_empty(map->hash)) {
 			hash_for_each(map->hash, bkt, entry, node) {
-				if (MANISH_DEBUG)
-					pr_info("manish_sk_remove_all: cpu=%d sk=%px\n",
+				if (ECON_DEBUG)
+					pr_info("econ_rx_remove_all: cpu=%d sk=%px\n",
 						cpu, entry->sk);
 				hash_del(&entry->node);
 				kfree(entry);
@@ -514,33 +521,33 @@ void manish_sk_remove_all(void)
 	}
 
 	for_each_possible_cpu(cpu) {
-		xfp_map = &per_cpu(manish_xfp_map, cpu);
-		if (!hash_empty(xfp_map->hash)) {
-			hash_for_each(xfp_map->hash, bkt, xfp_entry, node) {
-				if (MANISH_DEBUG)
-					pr_info("manish_xfp_remove_all: cpu=%d sk=%px\n",
-						cpu, xfp_entry->sk);
-				hash_del(&xfp_entry->node);
-				kfree(xfp_entry);
+		tx_map = &per_cpu(econ_tx_map, cpu);
+		if (!hash_empty(tx_map->hash)) {
+			hash_for_each(tx_map->hash, bkt, tx_entry, node) {
+				if (ECON_DEBUG)
+					pr_info("econ_tx_remove_all: cpu=%d sk=%px\n",
+						cpu, tx_entry->sk);
+				hash_del(&tx_entry->node);
+				kfree(tx_entry);
 			}
 		}
-		xfp_map->timestamp = ktime_get_ns();
+		tx_map->timestamp = ktime_get_ns();
 	}
 }
-EXPORT_SYMBOL(manish_sk_remove_all);
+EXPORT_SYMBOL(econ_rx_remove_all);
 
-int manish_xfp_insert(struct sk_buff *skb)
+int econ_tx_insert(struct sk_buff *skb)
 {
-	struct manish_xfp_entry *entry;
-	struct manish_xfp_map	*map;
-	struct flow_keys	 flow = { 0 };
-	struct iphdr		*ip;
-	struct udphdr		*udp;
-	struct vxlanhdr		*vxlan;
-	u32			 hash;
+	struct econ_tx_entry *entry;
+	struct econ_tx_map   *map;
+	struct flow_keys      flow = { 0 };
+	struct iphdr	     *ip;
+	struct udphdr	     *udp;
+	struct vxlanhdr	     *vxlan;
+	u32		      hash;
 
 	// check if fastpath is enabled
-	if (!MANISH_FASTPATH)
+	if (!ECON_ENABLED)
 		return 1;
 
 	// filter skb flow
@@ -548,9 +555,9 @@ int manish_xfp_insert(struct sk_buff *skb)
 		return 2;
 
 	// filter socket protocol
-	if (!skb->manish_sk)
+	if (!skb->econ_sk)
 		return 3;
-	if (skb->manish_sk->sk_prot != &tcp_prot && skb->manish_sk->sk_prot != &udp_prot)
+	if (skb->econ_sk->sk_prot != &tcp_prot && skb->econ_sk->sk_prot != &udp_prot)
 		return 4;
 
 	// compute flow hash
@@ -563,7 +570,7 @@ int manish_xfp_insert(struct sk_buff *skb)
 	    (ntohs(udp->dest) < 9000 || ntohs(udp->dest) > 9999))
 		return 6;
 	*/
-	flow.control.flags = (u32)((u64)skb->manish_sk);
+	flow.control.flags = (u32)((u64)skb->econ_sk);
 	flow.addrs.v4addrs.src = ip->saddr;
 	flow.addrs.v4addrs.dst = ip->daddr;
 	flow.basic.ip_proto = ip->protocol;
@@ -579,7 +586,7 @@ int manish_xfp_insert(struct sk_buff *skb)
 	vxlan = vxlan_hdr(skb);
 
 	// see if the given key already exists in the hashtable
-	map = get_cpu_ptr(&manish_xfp_map);
+	map = get_cpu_ptr(&econ_tx_map);
 	// only allow if timestamp difference > 100ms
 	if (ktime_get_ns() - map->timestamp < 100000000UL)
 		goto skip;
@@ -589,7 +596,7 @@ int manish_xfp_insert(struct sk_buff *skb)
 	}
 	// if key exists, save sk
 	if (entry && entry->key == hash) {
-		entry->sk = skb->manish_sk;
+		entry->sk = skb->econ_sk;
 		entry->dev = skb->dev;
 		memcpy(&entry->outer.eth, skb_mac_header(skb), sizeof(struct ethhdr));
 		memcpy(&entry->outer.ip, ip, sizeof(*ip));
@@ -599,15 +606,15 @@ int manish_xfp_insert(struct sk_buff *skb)
 	} else {
 		entry = kzalloc(sizeof(*entry), GFP_KERNEL);
 		entry->key = hash;
-		entry->sk = skb->manish_sk;
+		entry->sk = skb->econ_sk;
 		entry->dev = skb->dev;
 		memcpy(&entry->outer.eth, skb_mac_header(skb), sizeof(struct ethhdr));
 		memcpy(&entry->outer.ip, ip, sizeof(*ip));
 		memcpy(&entry->outer.udp, udp, sizeof(*udp));
 		memcpy(&entry->outer.vxlan, vxlan, sizeof(*vxlan));
 		hash_add(map->hash, &entry->node, entry->key);
-		if (MANISH_DEBUG)
-			pr_info("manish_xfp_insert: [cpu %d] %x => %px, dev=%s, %pI4:%u > %pI4:%u, vni=%x\n",
+		if (ECON_DEBUG)
+			pr_info("econ_tx_insert: [cpu %d] %x => %px, dev=%s, %pI4:%u > %pI4:%u, vni=%x\n",
 				smp_processor_id(), entry->key, entry->sk,
 				entry->dev ? entry->dev->name : "",
 				&entry->outer.ip.saddr, ntohs(entry->outer.udp.source),
@@ -615,13 +622,13 @@ int manish_xfp_insert(struct sk_buff *skb)
 				ntohl(vxlan_vni(vxlan_hdr(skb)->vx_vni)));
 	}
 skip:
-	put_cpu_ptr(&manish_xfp_map);
+	put_cpu_ptr(&econ_tx_map);
 	return 0;
 }
-EXPORT_SYMBOL(manish_xfp_insert);
+EXPORT_SYMBOL(econ_tx_insert);
 
-static int manish_xfp_add_outer_headers(struct sk_buff		*skb,
-					struct manish_xfp_entry *entry)
+static int econ_tx_add_outer_headers(struct sk_buff	  *skb,
+				     struct econ_tx_entry *entry)
 {
 	struct iphdr *ip;
 	struct udphdr *udp;
@@ -669,17 +676,17 @@ static int manish_xfp_add_outer_headers(struct sk_buff		*skb,
 	return 0;
 }
 
-int manish_xfp_xmit(struct sk_buff *skb)
+int econ_xmit(struct sk_buff *skb)
 {
 	struct iphdr *ip;
 	struct udphdr *udp;
 	struct flow_keys flow = { 0 };
 	u32 hash;
-	struct manish_xfp_map *map;
-	struct manish_xfp_entry *entry;
+	struct econ_tx_map *map;
+	struct econ_tx_entry *entry;
 	int ret;
 
-	skb->manish_sk = skb->sk;
+	skb->econ_sk = skb->sk;
 
 	// compute flow hash
 	ip = (struct iphdr *)skb_network_header(skb);
@@ -695,23 +702,23 @@ int manish_xfp_xmit(struct sk_buff *skb)
 	hash = flow_hash_from_keys(&flow);
 
 	// check if xfp entry exists
-	map = get_cpu_ptr(&manish_xfp_map);
+	map = get_cpu_ptr(&econ_tx_map);
 	hash_for_each_possible(map->hash, entry, node, hash) {
 		if (entry->key == hash && entry->sk == skb->sk)
 			break;
 	}
-	put_cpu_ptr(&manish_xfp_map);
+	put_cpu_ptr(&econ_tx_map);
 	// if flow is not cached, return failure
 	if (!entry || entry->key != hash)
 		return 2;
 
 	// else, add outer headers and xmit
-	if (manish_xfp_add_outer_headers(skb, entry))
+	if (econ_tx_add_outer_headers(skb, entry))
 		return 3;
 	skb_scrub_packet(skb, !net_eq(dev_net(skb->dev), dev_net(entry->dev)));
 	skb->pkt_type = PACKET_OUTGOING;
 	skb->dev = entry->dev;
-	skb->manish_sk = skb->sk;
+	skb->econ_sk = skb->sk;
 	skb_shinfo(skb)->gso_type |= SKB_GSO_UDP_TUNNEL_CSUM;
 
 	// outer netfilter hooks
@@ -730,7 +737,7 @@ int manish_xfp_xmit(struct sk_buff *skb)
 
 	return 0;
 }
-EXPORT_SYMBOL(manish_xfp_xmit);
+EXPORT_SYMBOL(econ_xmit);
 
 /*
 
