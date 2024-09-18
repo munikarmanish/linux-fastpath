@@ -2432,7 +2432,7 @@ int __udp4_lib_rcv(struct sk_buff *skb, struct udp_table *udptable,
 	struct dst_entry *dst;
 
 	// ECON begin
-	if (econ_filter_skb(skb, true))
+	if (ECON_DEBUG && econ_filter_skb(skb, true))
 		econ_print_skb(skb, "udp_rcv");
 	// ECON end
 
@@ -2475,7 +2475,7 @@ int __udp4_lib_rcv(struct sk_buff *skb, struct udp_table *udptable,
 	sk = skb_steal_sock(skb, &refcounted);
 	if (sk) {
 		// ECON begin
-		if (econ_filter_skb(skb, true))
+		if (ECON_DEBUG && econ_filter_skb(skb, true))
 			econ_print_skb(skb, "skb_steal_sock");
 		// ECON end
 		dst = skb_dst(skb);

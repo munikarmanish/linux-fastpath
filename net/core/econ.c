@@ -282,7 +282,7 @@ void econ_print_rx_map(struct seq_file *f)
 	struct econ_tx_map   *tx_map;
 	struct econ_tx_entry *tx_entry;
 
-	seq_printf(f, "\nECON Rx maps:\n=========\n");
+	seq_printf(f, "\nECON Rx maps:\n=============\n");
 	for_each_possible_cpu(cpu) {
 		rx_map = &per_cpu(econ_rx_map, cpu);
 		if (!hash_empty(rx_map->hash)) {
@@ -301,7 +301,7 @@ void econ_print_rx_map(struct seq_file *f)
 		}
 	}
 
-	seq_printf(f, "\nECON Tx maps:\n=========\n");
+	seq_printf(f, "\nECON Tx maps:\n=============\n");
 	for_each_possible_cpu(cpu) {
 		tx_map = &per_cpu(econ_tx_map, cpu);
 		if (!hash_empty(tx_map->hash)) {

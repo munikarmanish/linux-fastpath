@@ -9,22 +9,22 @@
 
 #define ECON_MAP_SIZE (1<<10)
 
-struct econ_flow {
-	__u8   smac[6];
-	__u8   dmac[6];
-	__be32 saddr;
-	__be32 daddr;
-	__be16 sport;
-	__be16 dport;
-	__u8   proto;
+struct econ_flow {	// 25 bytes (32 bytes)
+	__u8   smac[6];		// 6 bytes
+	__u8   dmac[6];		// 6 bytes
+	__be32 saddr;		// 4 bytes
+	__be32 daddr;		// 4 bytes
+	__be16 sport;		// 2 bytes
+	__be16 dport;		// 2 bytes
+	__u8   proto;		// 1 byte
 };
 
-struct econ_rx_entry {
-	u32		   key;
-	struct sock	  *sk;
-	struct net_device *dev;
-	struct econ_flow   flow;
-	struct hlist_node  node;
+struct econ_rx_entry {	// 61B
+	u32		   key;		// 4B
+	struct sock	  *sk;		// 8B
+	struct net_device *dev;		// 8B
+	struct econ_flow   flow;	// 32B
+	struct hlist_node  node;	// 16B
 };
 
 struct econ_rx_map {
@@ -47,21 +47,21 @@ struct econ_tx_map {
 };
 
 struct econ_outer_header {
-	struct ethhdr eth;
-	struct iphdr ip;
-	struct udphdr udp;
-	struct vxlanhdr vxlan;
+	struct ethhdr eth;	// 14 bytes
+	struct iphdr ip;	// 20 bytes
+	struct udphdr udp;	// 8 bytes
+	struct vxlanhdr vxlan;	// 8 bytes
 };
 
-struct econ_tx_entry {
+struct econ_tx_entry { // 86 bytes
 	/* required */
-	struct hlist_node node;
-	u32 key;
+	struct hlist_node node;		// 16 bytes
+	u32 key;			// 4 bytes
 	/* inner */
-	struct sock *sk;
+	struct sock *sk;		// 8 bytes
 	/* outer */
-	struct net_device *dev;
-	struct econ_outer_header outer;
+	struct net_device *dev;		// 8 bytes
+	struct econ_outer_header outer;	// 50 bytes
 };
 
 extern int ECON_DEBUG;
