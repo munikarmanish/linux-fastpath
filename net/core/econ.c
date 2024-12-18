@@ -22,14 +22,15 @@ EXPORT_PER_CPU_SYMBOL(econ_rx_map);
 DEFINE_PER_CPU(struct econ_tx_map, econ_tx_map);
 EXPORT_PER_CPU_SYMBOL(econ_tx_map);
 
-int ECON_ENABLED = 1;	// ECON enabled by default
+int ECON_ENABLED = 0;	// ECON disabled by default
 EXPORT_SYMBOL(ECON_ENABLED);
 
 int ECON_DEBUG = 0;	// debugging disabled by default
 EXPORT_SYMBOL(ECON_DEBUG);
 
 u32 PNIC_NET = 0xc0a800; // 192.168.0
-u32 VNIC_NET = 0x010000; // 1.0.0
+// u32 VNIC_NET = 0x010000; // 1.0.0
+u32 VNIC_NET = 0x0ae9; // 10.233
 
 inline bool econ_filter_parse_skb(const struct sk_buff *skb, struct econ_pkt *pkt, bool deep)
 {
@@ -59,7 +60,7 @@ restart_from_eth:
 		return false;
 	// IP addresses must match
 	if (((ntohl(ip->daddr) >> 8) != PNIC_NET) &&
-	    ((ntohl(ip->daddr) >> 8) != VNIC_NET))
+	    ((ntohl(ip->daddr) >> 16) != VNIC_NET))
 		return false;
 
 	// if non-first fragment, return
@@ -203,10 +204,12 @@ start_from_eth:
 	}
 
 	// check the header fields
-	if (strncmp(entry->flow.smac, eth->h_source, 6) != 0)
-		return NULL;
-	if (strncmp(entry->flow.dmac, eth->h_dest, 6) != 0)
-		return NULL;
+
+	// skip checking MAC addresses
+	// if (strncmp(entry->flow.smac, eth->h_source, 6) != 0)
+	// 	return NULL;
+	// if (strncmp(entry->flow.dmac, eth->h_dest, 6) != 0)
+	// 	return NULL;
 	if (entry->flow.saddr != ip->saddr)
 		return NULL;
 	if (entry->flow.daddr != ip->daddr)
@@ -226,7 +229,7 @@ void econ_rx_insert(struct sk_buff *skb, struct sock *sk)
 {
 	struct econ_rx_entry *entry;
 	struct econ_rx_map   *map;
-	struct ethhdr	     *eth;
+	// struct ethhdr	     *eth;
 	struct iphdr	     *ip;
 	struct udphdr	     *udp;
 
@@ -258,9 +261,10 @@ void econ_rx_insert(struct sk_buff *skb, struct sock *sk)
 	entry->sk = sk;
 	entry->dev = skb->dev;
 
-	eth = eth_hdr(skb);
-	memcpy(entry->flow.smac, eth->h_source, 6);
-	memcpy(entry->flow.dmac, eth->h_dest, 6);
+	// skip MAC addrs
+	// eth = eth_hdr(skb);
+	// memcpy(entry->flow.smac, eth->h_source, 6);
+	// memcpy(entry->flow.dmac, eth->h_dest, 6);
 	ip = ip_hdr(skb);
 	entry->flow.saddr = ip->saddr;
 	entry->flow.daddr = ip->daddr;
@@ -329,19 +333,21 @@ void econ_print_rx_map(struct seq_file *f)
 /**
  *	Checks if packet is VXLAN, and removes outer headers if so.
  */
-bool econ_rx(struct sk_buff *skb)
+int econ_rx(struct sk_buff *skb)
 {
 	struct iphdr	     *ip;
 	struct udphdr	     *udp;
 	struct econ_rx_entry *entry;
 	int		      drop_reason = SKB_DROP_REASON_NOT_SPECIFIED;
 
+	// packet has already be processed once by ECON
 	if (skb->econ_sk)
-		return false;
+		return 1;
 
+	// flow not cached
 	entry = econ_rx_lookup(skb);
 	if (!entry)
-		return false;
+		return 2;
 
 	/* prevent socket lookup */
 	skb->econ_sk = entry->sk;
@@ -374,14 +380,14 @@ bool econ_rx(struct sk_buff *skb)
 		skb_postpull_rcsum(skb, skb_network_header(skb), skb_network_header_len(skb) + 8 + 8 + 14);
 	}
 
-	return true;
+	return 0;
 
 ip_csum_error:
 	drop_reason = SKB_DROP_REASON_IP_CSUM;
 	goto drop;
 drop:
 	kfree_skb_reason(skb, drop_reason);
-	return false;
+	return 3;
 }
 EXPORT_SYMBOL(econ_rx);
 
@@ -544,6 +550,7 @@ int econ_tx_insert(struct sk_buff *skb)
 	struct iphdr	     *ip;
 	struct udphdr	     *udp;
 	struct vxlanhdr	     *vxlan;
+	u8		     *inner_eth;
 	u32		      hash;
 
 	// check if fastpath is enabled
@@ -584,6 +591,7 @@ int econ_tx_insert(struct sk_buff *skb)
 	if (ip->protocol != IPPROTO_UDP && ntohs(udp->dest) != IANA_VXLAN_UDP_PORT)
 		return 7;
 	vxlan = vxlan_hdr(skb);
+	inner_eth = ((u8 *)(vxlan)) + 8;
 
 	// see if the given key already exists in the hashtable
 	map = get_cpu_ptr(&econ_tx_map);
@@ -602,6 +610,7 @@ int econ_tx_insert(struct sk_buff *skb)
 		memcpy(&entry->outer.ip, ip, sizeof(*ip));
 		memcpy(&entry->outer.udp, udp, sizeof(*udp));
 		memcpy(&entry->outer.vxlan, vxlan, sizeof(*vxlan));
+		memcpy(&entry->inner_mac_addrs[0], inner_eth, 12);
 	// if key doesn't exist, add a new entry
 	} else {
 		entry = kzalloc(sizeof(*entry), GFP_KERNEL);
@@ -612,6 +621,7 @@ int econ_tx_insert(struct sk_buff *skb)
 		memcpy(&entry->outer.ip, ip, sizeof(*ip));
 		memcpy(&entry->outer.udp, udp, sizeof(*udp));
 		memcpy(&entry->outer.vxlan, vxlan, sizeof(*vxlan));
+		memcpy(&entry->inner_mac_addrs[0], inner_eth, 12);
 		hash_add(map->hash, &entry->node, entry->key);
 		if (ECON_DEBUG)
 			pr_info("econ_tx_insert: [cpu %d] %x => %px, dev=%s, %pI4:%u > %pI4:%u, vni=%x\n",
@@ -632,6 +642,7 @@ static int econ_tx_add_outer_headers(struct sk_buff	  *skb,
 {
 	struct iphdr *ip;
 	struct udphdr *udp;
+	u8 *inner_eth_hdr;
 	u16 len;
 
 	// make sure there's enough room
@@ -653,6 +664,9 @@ static int econ_tx_add_outer_headers(struct sk_buff	  *skb,
 	memcpy(skb_transport_header(skb), &entry->outer.udp, 8 + 8);
 	ip = ip_hdr(skb);
 	udp = udp_hdr(skb);
+	// replace inner mac addresses too
+	inner_eth_hdr = ((u8*)udp) + 16;
+	memcpy(inner_eth_hdr, &entry->inner_mac_addrs[0], 12);
 
 	// compute a random ip->id
 	get_random_bytes(&ip->id, sizeof(ip->id));

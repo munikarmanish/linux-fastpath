@@ -10,8 +10,8 @@
 #define ECON_MAP_SIZE (1<<10)
 
 struct econ_flow {	// 25 bytes (32 bytes)
-	__u8   smac[6];		// 6 bytes
-	__u8   dmac[6];		// 6 bytes
+	// __u8   smac[6];		// 6 bytes
+	// __u8   dmac[6];		// 6 bytes
 	__be32 saddr;		// 4 bytes
 	__be32 daddr;		// 4 bytes
 	__be16 sport;		// 2 bytes
@@ -62,6 +62,7 @@ struct econ_tx_entry { // 86 bytes
 	/* outer */
 	struct net_device *dev;		// 8 bytes
 	struct econ_outer_header outer;	// 50 bytes
+	char inner_mac_addrs[16];	// 16 bytes (only 12 bytes is used to store mac addr pair)
 };
 
 extern int ECON_DEBUG;
@@ -75,7 +76,7 @@ extern struct econ_rx_entry *econ_rx_lookup(const struct sk_buff *skb);
 inline bool econ_skb_is_from_mlx(const struct sk_buff *skb);
 extern void econ_rx_insert(struct sk_buff *skb, struct sock *sk);
 void	    econ_print_rx_map(struct seq_file *f);
-extern bool econ_rx(struct sk_buff *skb);
+extern int  econ_rx(struct sk_buff *skb);
 extern bool econ_rx_deliver(struct sk_buff *skb);
 extern void econ_rx_remove(const struct sock *sk);
 extern void econ_rx_remove_all(void);
