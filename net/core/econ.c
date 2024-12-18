@@ -646,8 +646,10 @@ static int econ_tx_add_outer_headers(struct sk_buff	  *skb,
 	u16 len;
 
 	// make sure there's enough room
-	if (skb_headroom(skb) < 50)
-		return -ENOMEM;
+	if (skb_headroom(skb) < 50) {
+		if (skb_cow(skb, 50))
+			return -ENOMEM;
+	}
 
 	// update skb header pointers
 	len = ntohs(ip_hdr(skb)->tot_len) + 50;
