@@ -245,7 +245,7 @@ static int econ_show(struct seq_file *f, void *p)
 		   ECON_ENABLED ? "on" : "off",
 		   ECON_DEBUG ? "on" : "off");
 	if (ECON_ENABLED)
-		econ_print_rx_map(f);
+		econ_print_maps(f);
 	return 0;
 }
 

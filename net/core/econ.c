@@ -162,16 +162,23 @@ void econ_print_skb(const struct sk_buff *skb, const char *fname)
 }
 EXPORT_SYMBOL(econ_print_skb);
 
-void inline econ_rx_map_init(int cpu)
+void inline econ_map_init(int cpu)
 {
 	int bkt;
-	struct econ_rx_map *map;
+	struct econ_rx_map *rxmap;
+	struct econ_tx_map *txmap;
 
 	if (ECON_DEBUG)
 		pr_info("===: initializing econ_rx_map on cpu %d\n", cpu);
-	map = &per_cpu(econ_rx_map, cpu);
+	rxmap = &per_cpu(econ_rx_map, cpu);
 	for (bkt = 0; bkt < ECON_MAP_SIZE; bkt++)
-		map->hash[bkt].first = NULL;
+		rxmap->hash[bkt].first = NULL;
+
+	if (ECON_DEBUG)
+		pr_info("===: initializing econ_tx_map on cpu %d\n", cpu);
+	txmap = &per_cpu(econ_tx_map, cpu);
+	for (bkt = 0; bkt < ECON_MAP_SIZE; bkt++)
+		txmap->hash[bkt].first = NULL;
 }
 
 struct econ_rx_entry *econ_rx_lookup(const struct sk_buff *skb)
@@ -181,7 +188,9 @@ struct econ_rx_entry *econ_rx_lookup(const struct sk_buff *skb)
 	struct iphdr	     *ip;
 	struct udphdr	     *udp;
 	u8		     *cursor;
-	struct econ_rx_map   *map = get_cpu_ptr(&econ_rx_map);
+	struct econ_rx_map   *map;
+
+	map = get_cpu_ptr(&econ_rx_map);
 	hash_for_each_possible(map->hash, entry, node, skb->hash) {
 		if (entry->key == skb->hash)
 			break;
@@ -278,7 +287,7 @@ skip:
 }
 EXPORT_SYMBOL(econ_rx_insert);
 
-void econ_print_rx_map(struct seq_file *f)
+void econ_print_maps(struct seq_file *f)
 {
 	int		      cpu, bkt;
 	struct econ_rx_map   *rx_map;
@@ -470,7 +479,7 @@ void econ_rx_remove(const struct sock *sk)
 	struct econ_tx_map   *tx_map;
 	struct econ_tx_entry *tx_entry;
 
-	/* remove sk entry */
+	/* remove tx entry */
 	for_each_possible_cpu(cpu) {
 		map = &per_cpu(econ_rx_map, cpu);
 		if (!hash_empty(map->hash)) {

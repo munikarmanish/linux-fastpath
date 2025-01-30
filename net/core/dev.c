@@ -3585,7 +3585,9 @@ static int xmit_one(struct sk_buff *skb, struct net_device *dev,
 	int rc;
 
 	// ECON begin
-	if (ECON_ENABLED && skb->econ_sk && (strncmp(dev->name, "enp", 3) == 0))
+	if (ECON_ENABLED && skb->econ_sk &&
+	    ((strncmp(dev->name, "enp", 3) == 0) ||
+	     (strncmp(dev->name, "ens", 3) == 0)))
 		econ_tx_insert(skb);
 	// ECON end
 
@@ -6231,8 +6233,9 @@ gro_result_t napi_gro_receive(struct napi_struct *napi, struct sk_buff *skb)
 	gro_result_t ret;
 
 	// ECON begin
-	// make sure the input device is enp129s0f0np0
-	if (ECON_ENABLED && (strncmp(napi->dev->name, "enp", 3) == 0))
+	// make sure the input device name starts with "enp" or "ens"
+	if (ECON_ENABLED && ((strncmp(napi->dev->name, "enp", 3) == 0) ||
+			     (strncmp(napi->dev->name, "ens", 3) == 0)))
 		econ_rx(skb);
 	// ECON end
 
@@ -11670,7 +11673,7 @@ static int __init net_dev_init(void)
 		struct work_struct *flush = per_cpu_ptr(&flush_works, i);
 		struct softnet_data *sd = &per_cpu(softnet_data, i);
 		// ECON begin
-		econ_rx_map_init(i);
+		econ_map_init(i);
 		// ECON end
 
 		INIT_WORK(flush, flush_backlog);
